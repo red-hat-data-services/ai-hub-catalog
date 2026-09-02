@@ -12,17 +12,17 @@ metadata:
     pipelinesascode.tekton.dev/cancel-in-progress: "true"
     pipelinesascode.tekton.dev/max-keep-runs: "3"
     pipelinesascode.tekton.dev/on-cel-expression: |
-      event == "pull_request" && target_branch == "main" && (
+      event == "pull_request" && target_branch == "3.6-EA1" && (
           ".tekton/ai-hub-catalog-ubi9-on-pull-request.yaml".pathChanged() ||
           "".pathChanged() ||
           "Dockerfile.konflux".pathChanged() ||
           "data/***".pathChanged()
       )
   labels:
-    appstudio.openshift.io/application: ai-hub
-    appstudio.openshift.io/component: ai-hub-catalog-ubi9
+    appstudio.openshift.io/application: ai-hub-3-6-ea1
+    appstudio.openshift.io/component: ai-hub-catalog-ubi9-3-6-ea1
     pipelines.appstudio.openshift.io/type: build
-  name: ai-hub-catalog-ubi9-on-pull-request
+  name: ai-hub-catalog-ubi9-3-6-ea1-on-pull-request
   namespace: ai-tenant
 spec:
   params:
@@ -31,7 +31,7 @@ spec:
   - name: revision
     value: "{{revision}}"
   - name: output-image
-    value: quay.io/redhat-user-workloads/ai-tenant/ai-hub/ai-hub-catalog-ubi9:on-pr-{{revision}}
+    value: quay.io/redhat-user-workloads/ai-tenant/ai-hub-3-6-ea1/ai-hub-catalog-ubi9-3-6-ea1:on-pr-{{revision}}
   - name: image-expires-after
     value: 5d
   - name: dockerfile
@@ -48,8 +48,8 @@ spec:
     - linux/arm64
   - name: labels
     value:
-    - name=ai-hub/catalog-ubi9
-    - com.redhat.component=ai-hub/catalog-ubi9-container
+    - name=rhai-early-access/ai-hub-catalog-rhel9
+    - com.redhat.component=rhai-early-access/ai-hub-catalog-rhel9-container
     - cpe=cpe:/a:redhat:openshift_ai:3.6::el9
   - name: snyk-project-name
     value: "ai-red-hat-inference-server"
@@ -77,7 +77,7 @@ spec:
       value: password
     resolver: git
   taskRunTemplate:
-    serviceAccountName: build-pipeline-ai-hub-catalog-ubi9
+    serviceAccountName: build-pipeline-ai-hub-catalog-ubi9-3-6-ea1
   workspaces:
   - name: git-auth
     secret:
