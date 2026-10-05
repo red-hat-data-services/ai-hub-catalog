@@ -5,7 +5,7 @@ apiVersion: tekton.dev/v1
 kind: PipelineRun
 metadata:
   annotations:
-    build.appstudio.openshift.io/repo: https://github.com/red-hat-data-services/ai-hub-catalog/-/tree/{{revision}}
+    build.appstudio.openshift.io/repo: https://github.com/red-hat-data-services/ai-hub-catalog/tree/{{revision}}
     build.appstudio.redhat.com/commit_sha: "{{revision}}"
     build.appstudio.redhat.com/target_branch: "{{target_branch}}"
     pipelinesascode.tekton.dev/cancel-in-progress: "false"
@@ -56,22 +56,12 @@ spec:
     value: "global-pull-secret"
   pipelineRef:
     params:
-    - name: org
-      value: redhat
-    - name: repo
-      value: rhel-ai/konflux-data
-    - name: scmType
-      value: gitlab
-    - name: serverURL
-      value: https://gitlab.com
+    - name: url
+      value: https://github.com/red-hat-data-services/aipcc-konflux-data.git
     - name: revision
       value: main
     - name: pathInRepo
       value: pipelines/full-container.yaml
-    - name: token
-      value: pipelines-as-code-secret
-    - name: tokenKey
-      value: password
     resolver: git
   taskRunTemplate:
     serviceAccountName: build-pipeline-ai-hub-catalog-ubi9
