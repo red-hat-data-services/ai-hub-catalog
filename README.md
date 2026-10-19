@@ -179,7 +179,7 @@ never packaged.
 
 The Dockerfile fetches the private
 [`models-perf-benchmark-data`](https://github.com/red-hat-data-services/models-perf-benchmark-data)
-repository during the build, runs its release qualifier, and validates the
+repository during the build, runs its qualifier, and validates the
 result before copying it to `/app/benchmarks`. No local benchmark folder,
 qualification report, or staged `build/` directory is required.
 
@@ -201,11 +201,33 @@ to both repositories and is never copied into an image layer. Direct Docker
 or Podman builds can pass the same arguments and secrets; see
 [`release/README.md`](release/README.md).
 
-Release validation remains mandatory inside the Dockerfile: the fetched
-revision must contain the producer qualifier and release-approved exclusions,
-and the RHOAI 3.4 and 3.5 loader checks must pass. Testing-only approval fails
-the build. The loader executables are also supplied as build secrets; their
-runtime dependencies must be available in the builder image.
+By default, the fetched revision must contain the producer qualifier and
+release-approved exclusions, and the RHOAI 3.4 and 3.5 loader checks must pass.
+The loader executables are supplied as build secrets; their runtime dependencies
+must be available in the builder image.
+
+For a local or Konflux integration test using the benchmark repository's
+`approved-for-testing` policy, explicitly select test qualification and skip
+the product loader checks:
+
+```bash
+make docker-build \
+  BENCHMARK_REVISION=4c2c0d67e6199eb7bf4505238b7e0e84391e949c \
+  BENCHMARK_QUALIFICATION_MODE=test \
+  SKIP_MODEL_CATALOG_LOADER_CHECKS=true \
+  CATALOG_DATA_REPOSITORY=https://github.com/Al-Pragliola/ai-hub-catalog.git \
+  BASE_IMAGE=registry.access.redhat.com/ubi9/ubi-minimal@sha256:a21d19f72557aa893a0f6ca1177bb1ffd91df6015e60470a116c50a6a05efcd9 \
+  DOCKER_IMAGE_TAG=test
+```
+
+The catalog repository must contain your current commit, as described above.
+This command uses the public UBI base for local testing and needs only Git
+credentials. It still validates the fetched payload, report hashes, manifest,
+and catalog compatibility. The image labels record qualification mode `test`
+and skipped loader checks; it is not eligible for release promotion. To run
+loader checks in test mode, omit the skip flag and supply their directory.
+Skipping them is rejected in release mode. Direct Docker builds accept the
+same two flags via `--build-arg`.
 
 `make validate-release-candidate` remains available for standalone validation
 of an already qualified local handoff. Public CI uses the existing synthetic

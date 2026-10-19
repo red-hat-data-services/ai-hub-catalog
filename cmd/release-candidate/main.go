@@ -17,6 +17,8 @@ func main() {
 	flag.StringVar(&cfg.ProducerInputDir, "producer-input-dir", "input", "directory containing producer-only catalog inputs")
 	flag.StringVar(&cfg.BenchmarkDir, "benchmark-dir", "", "qualified benchmark payload directory (required)")
 	flag.StringVar(&cfg.BenchmarkQualificationReport, "benchmark-qualification-report", "", "qualification report for the benchmark payload (required)")
+	flag.StringVar(&cfg.BenchmarkQualificationMode, "benchmark-qualification-mode", "release", "qualification mode: release (default) or test (not eligible for promotion)")
+	flag.BoolVar(&cfg.SkipLoaderChecks, "skip-loader-checks", false, "skip Model Catalog loader checks (requires benchmark qualification mode test)")
 	flag.StringVar(&cfg.RuntimeFileList, "runtime-files", "release/runtime-catalog-files.txt", "runtime catalog allowlist")
 	flag.StringVar(&cfg.OutputDir, "output-dir", "build/release-candidate", "validated image build context")
 	flag.StringVar(&cfg.LoaderCheckDir, "loader-check-dir", "", "directory containing one executable check per supported Model Catalog version")
@@ -28,7 +30,7 @@ func main() {
 		fmt.Fprintln(os.Stderr, "release candidate validation failed: --benchmark-dir is required")
 		os.Exit(2)
 	}
-	if cfg.LoaderCheckDir == "" {
+	if cfg.LoaderCheckDir == "" && !cfg.SkipLoaderChecks {
 		fmt.Fprintln(os.Stderr, "release candidate validation failed: --loader-check-dir is required")
 		os.Exit(2)
 	}
@@ -54,6 +56,12 @@ func main() {
 	}
 
 	fmt.Printf("release candidate validated: %d catalog files, %d benchmark files, %d compatible benchmark models\n", report.CatalogFiles, report.BenchmarkFiles, report.BenchmarkModels)
+	if cfg.BenchmarkQualificationMode == "test" {
+		fmt.Println("benchmark qualification mode: test; not eligible for release promotion")
+	}
+	if cfg.SkipLoaderChecks {
+		fmt.Println("Model Catalog loader checks: skipped")
+	}
 	fmt.Printf("staged image payload: %s/app/data and %s/app/benchmarks\n", cfg.OutputDir, cfg.OutputDir)
 }
 
@@ -99,6 +107,9 @@ func rejectCommittedFixtures(cfg releasecandidate.Config) error {
 		{"--loader-check-dir", cfg.LoaderCheckDir, "internal/releasecandidate/testdata/loader-checks"},
 	}
 	for _, item := range paths {
+		if item.label == "--loader-check-dir" && cfg.SkipLoaderChecks {
+			continue
+		}
 		actual, err := resolvedAbsolute(item.actual)
 		if err != nil {
 			return fmt.Errorf("resolve %s: %w", item.label, err)

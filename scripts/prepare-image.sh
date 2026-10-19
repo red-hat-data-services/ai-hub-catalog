@@ -16,6 +16,24 @@ require_revision() {
 
 require_revision BENCHMARK_REVISION "${BENCHMARK_REVISION:-}"
 require_revision CATALOG_REVISION "${CATALOG_REVISION:-}"
+qualification_mode=${BENCHMARK_QUALIFICATION_MODE-release}
+case "$qualification_mode" in
+    release) ;;
+    test) echo "Building with testing approval; this image is not eligible for release promotion" ;;
+    *) echo "BENCHMARK_QUALIFICATION_MODE must be release or test" >&2; exit 2 ;;
+esac
+skip_loader_checks=${SKIP_MODEL_CATALOG_LOADER_CHECKS-false}
+case "$skip_loader_checks" in
+    false) ;;
+    true)
+        if [ "$qualification_mode" != test ]; then
+            echo "SKIP_MODEL_CATALOG_LOADER_CHECKS=true requires BENCHMARK_QUALIFICATION_MODE=test" >&2
+            exit 2
+        fi
+        echo "Skipping Model Catalog loader checks for this test image"
+        ;;
+    *) echo "SKIP_MODEL_CATALOG_LOADER_CHECKS must be true or false" >&2; exit 2 ;;
+esac
 source_root=$(pwd)
 output=${1:-/prepared}
 scratch=$(mktemp -d)
@@ -65,24 +83,28 @@ python3.12 "$scratch/benchmarks/api-client/qualify.py" \
     --benchmark-revision "$BENCHMARK_REVISION" \
     --catalog-revision "$CATALOG_REVISION" \
     --handoff-dir "$scratch/handoff" \
-    --mode release
+    --mode "$qualification_mode"
 
 mkdir "$scratch/loader-checks"
-while IFS= read -r version; do
-    case "$version" in ''|\#*) continue ;; esac
-    if [ ! -s "/run/secrets/$version" ]; then
-        echo "Missing release loader check: supply --secret id=$version,src=/path/to/$version" >&2
-        exit 2
-    fi
-    cp "/run/secrets/$version" "$scratch/loader-checks/$version"
-    chmod 700 "$scratch/loader-checks/$version"
-done < release/supported-model-catalog-versions.txt
+if [ "$skip_loader_checks" = false ]; then
+    while IFS= read -r version; do
+        case "$version" in ''|\#*) continue ;; esac
+        if [ ! -s "/run/secrets/$version" ]; then
+            echo "Missing release loader check: supply --secret id=$version,src=/path/to/$version" >&2
+            exit 2
+        fi
+        cp "/run/secrets/$version" "$scratch/loader-checks/$version"
+        chmod 700 "$scratch/loader-checks/$version"
+    done < release/supported-model-catalog-versions.txt
+fi
 
 release-candidate \
     --catalog-dir "$source_root/data" \
     --producer-input-dir "$source_root/input" \
     --benchmark-dir "$scratch/handoff/benchmarks" \
     --benchmark-qualification-report "$scratch/handoff/qualification-report.json" \
+    --benchmark-qualification-mode "$qualification_mode" \
+    --skip-loader-checks="$skip_loader_checks" \
     --runtime-files "$source_root/release/runtime-catalog-files.txt" \
     --supported-version-list "$source_root/release/supported-model-catalog-versions.txt" \
     --loader-check-dir "$scratch/loader-checks" \

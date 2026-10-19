@@ -20,6 +20,8 @@ RUNTIME_CATALOG_FILES?=release/runtime-catalog-files.txt
 BENCHMARK_DATA_DIR?=
 BENCHMARK_DATA_REPOSITORY?=https://github.com/red-hat-data-services/models-perf-benchmark-data.git
 BENCHMARK_REVISION?=
+BENCHMARK_QUALIFICATION_MODE?=release
+SKIP_MODEL_CATALOG_LOADER_CHECKS?=false
 CATALOG_DATA_REPOSITORY?=https://github.com/red-hat-data-services/ai-hub-catalog.git
 CATALOG_REVISION?=$(shell git rev-parse HEAD)
 GITHUB_TOKEN_FILE?=
@@ -271,7 +273,7 @@ validate-release-candidate: validate-product-release-candidate-output-path
 		echo "BENCHMARK_DATA_DIR must point to a qualified benchmark payload"; \
 		exit 2; \
 	fi
-	@if [ -z "$(MODEL_CATALOG_LOADER_CHECK_DIR)" ]; then \
+	@if [ "$(SKIP_MODEL_CATALOG_LOADER_CHECKS)" != "true" ] && [ -z "$(MODEL_CATALOG_LOADER_CHECK_DIR)" ]; then \
 		echo "MODEL_CATALOG_LOADER_CHECK_DIR must contain supported-version loader checks"; \
 		exit 2; \
 	fi
@@ -284,6 +286,8 @@ validate-release-candidate: validate-product-release-candidate-output-path
 		--producer-input-dir input \
 		--benchmark-dir "$(BENCHMARK_DATA_DIR)" \
 		--benchmark-qualification-report "$(BENCHMARK_QUALIFICATION_REPORT)" \
+		--benchmark-qualification-mode "$(BENCHMARK_QUALIFICATION_MODE)" \
+		--skip-loader-checks="$(SKIP_MODEL_CATALOG_LOADER_CHECKS)" \
 		--runtime-files "$(RUNTIME_CATALOG_FILES)" \
 		--output-dir "$(RELEASE_CANDIDATE_DIR)" \
 		--loader-check-dir "$(MODEL_CATALOG_LOADER_CHECK_DIR)" \
@@ -365,7 +369,7 @@ docker-build:
 			set -- "$$@" --secret id=github_token,env=GITHUB_TOKEN; \
 		fi; \
 	fi; \
-	if [ -n "$(MODEL_CATALOG_LOADER_CHECK_DIR)" ]; then \
+	if [ "$(SKIP_MODEL_CATALOG_LOADER_CHECKS)" != "true" ] && [ -n "$(MODEL_CATALOG_LOADER_CHECK_DIR)" ]; then \
 		while IFS= read -r version; do \
 			case "$$version" in ''|\#*) continue ;; esac; \
 			set -- "$$@" --secret "id=$$version,src=$(MODEL_CATALOG_LOADER_CHECK_DIR)/$$version"; \
@@ -376,6 +380,8 @@ docker-build:
 	DOCKER_BUILDKIT=1 $(CONTAINER_RUNTIME) build "$$@" \
 		--build-arg "BENCHMARK_DATA_REPOSITORY=$(BENCHMARK_DATA_REPOSITORY)" \
 		--build-arg "BENCHMARK_REVISION=$(BENCHMARK_REVISION)" \
+		--build-arg "BENCHMARK_QUALIFICATION_MODE=$(BENCHMARK_QUALIFICATION_MODE)" \
+		--build-arg "SKIP_MODEL_CATALOG_LOADER_CHECKS=$(SKIP_MODEL_CATALOG_LOADER_CHECKS)" \
 		--build-arg "CATALOG_DATA_REPOSITORY=$(CATALOG_DATA_REPOSITORY)" \
 		--build-arg "CATALOG_REVISION=$(CATALOG_REVISION)" \
 		-t $(DOCKER_FULL_IMAGE_NAME) .

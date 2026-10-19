@@ -66,6 +66,20 @@ func TestValidateAndStageRejectsQualificationReportPayloadMismatch(t *testing.T)
 	}
 }
 
+func TestDigestPayloadMatchesProducerPathOrdering(t *testing.T) {
+	payload := map[string][]byte{
+		"a/model/metadata.json":       []byte("{\"id\":\"a/model\"}\n"),
+		"a/model-extra/metadata.json": []byte("{\"id\":\"a/model-extra\"}\n"),
+		"manifest.json":               []byte("{}\n"),
+	}
+	// Computed with the producer's _tree_digest: sorted pathlib paths, with
+	// each relative name and file content followed by a NUL byte.
+	const want = "2c27c218912b6055494b5d6d56ff62982d177111829311db2a1c044500a27217"
+	if got := digestPayload(payload); got != want {
+		t.Fatalf("payload digest = %s, want producer digest %s", got, want)
+	}
+}
+
 func TestValidateAndStageRejectsUnapprovedQualificationReport(t *testing.T) {
 	cfg := newTestCandidate(t, "example/model")
 	report, err := os.ReadFile(cfg.BenchmarkQualificationReport)
@@ -118,6 +132,136 @@ func TestValidateAndStageRejectsNonPromotableQualificationReport(t *testing.T) {
 	}
 	if _, statErr := os.Stat(cfg.OutputDir); !os.IsNotExist(statErr) {
 		t.Fatalf("non-promotable candidate must not be staged, stat error = %v", statErr)
+	}
+}
+
+func TestValidateAndStageWithTestingApproval(t *testing.T) {
+	tests := []struct {
+		name             string
+		skipLoaderChecks bool
+		editReport       func(*qualificationReport)
+		editInput        func(*testing.T, Config)
+		wantError        string
+	}{
+		{name: "accept testing approval"},
+		{name: "skip loader checks explicitly for test image", skipLoaderChecks: true},
+		{
+			name: "reject missing approval",
+			editReport: func(report *qualificationReport) {
+				report.Exclusions.ReviewStatus = "pending"
+			},
+			wantError: `review_status "pending" must be "approved-for-testing"`,
+		},
+		{
+			name: "reject promotion eligibility",
+			editReport: func(report *qualificationReport) {
+				report.PromotionEligible = true
+			},
+			wantError: "promotion_eligible must be false",
+		},
+		{
+			name: "reject wrong qualification mode",
+			editReport: func(report *qualificationReport) {
+				report.QualificationMode = "release"
+			},
+			wantError: `qualification_mode "release" must be "test"`,
+		},
+		{
+			name: "still verify payload digest",
+			editReport: func(report *qualificationReport) {
+				report.PayloadSHA256 = strings.Repeat("0", 64)
+			},
+			wantError: "payload_sha256 does not match",
+		},
+		{
+			name:             "still verify payload when loader checks skipped",
+			skipLoaderChecks: true,
+			editReport: func(report *qualificationReport) {
+				report.PayloadSHA256 = strings.Repeat("0", 64)
+			},
+			wantError: "payload_sha256 does not match",
+		},
+		{
+			name: "still verify catalog compatibility",
+			editInput: func(t *testing.T, cfg Config) {
+				writeFile(t, filepath.Join(cfg.CatalogDir, "validated-models-catalog.yaml"),
+					"source: test\nmodels:\n  - name: example/different\n    artifacts:\n      - uri: oci://example.invalid/model:1\n", 0o644)
+			},
+			wantError: "is not present in the runtime model catalogs",
+		},
+		{
+			name: "still require successful loader checks",
+			editInput: func(t *testing.T, cfg Config) {
+				writeFile(t, filepath.Join(cfg.LoaderCheckDir, "fixture-v1"), "#!/bin/sh\nexit 1\n", 0o755)
+			},
+			wantError: "model catalog loader check fixture-v1 failed",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			cfg := newTestCandidate(t, "example/model")
+			cfg.BenchmarkQualificationMode = "test"
+			cfg.SkipLoaderChecks = test.skipLoaderChecks
+			if cfg.SkipLoaderChecks {
+				cfg.LoaderCheckDir = ""
+			}
+			data, err := os.ReadFile(cfg.BenchmarkQualificationReport)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var qualification qualificationReport
+			if err := json.Unmarshal(data, &qualification); err != nil {
+				t.Fatal(err)
+			}
+			qualification.QualificationMode = "test"
+			qualification.PromotionEligible = false
+			qualification.Exclusions.ReviewStatus = "approved-for-testing"
+			if test.editReport != nil {
+				test.editReport(&qualification)
+			}
+			data, err = json.Marshal(qualification)
+			if err != nil {
+				t.Fatal(err)
+			}
+			writeFile(t, cfg.BenchmarkQualificationReport, string(data), 0o644)
+			if test.editInput != nil {
+				test.editInput(t, cfg)
+			}
+			_, err = ValidateAndStage(cfg)
+			if test.wantError == "" {
+				if err != nil {
+					t.Fatalf("testing approval should be accepted with explicit test mode: %v", err)
+				}
+				assertMode(t, filepath.Join(cfg.OutputDir, "app", "benchmarks", "manifest.json"), 0o644)
+			} else {
+				if err == nil || !strings.Contains(err.Error(), test.wantError) {
+					t.Fatalf("expected error containing %q, got %v", test.wantError, err)
+				}
+				if _, statErr := os.Stat(cfg.OutputDir); !os.IsNotExist(statErr) {
+					t.Fatalf("invalid candidate must not be staged: %v", statErr)
+				}
+			}
+		})
+	}
+}
+
+func TestValidateAndStageRejectsUnknownQualificationMode(t *testing.T) {
+	cfg := newTestCandidate(t, "example/model")
+	cfg.BenchmarkQualificationMode = "disabled"
+	if _, err := ValidateAndStage(cfg); err == nil || !strings.Contains(err.Error(), "mode must be release or test") {
+		t.Fatalf("expected invalid qualification mode error, got %v", err)
+	}
+}
+
+func TestValidateAndStageRejectsSkippingReleaseLoaderChecks(t *testing.T) {
+	cfg := newTestCandidate(t, "example/model")
+	cfg.SkipLoaderChecks = true
+	cfg.LoaderCheckDir = ""
+	if _, err := ValidateAndStage(cfg); err == nil || !strings.Contains(err.Error(), "skipping loader checks requires benchmark qualification mode test") {
+		t.Fatalf("expected release mode to forbid skipping loader checks, got %v", err)
+	}
+	if _, err := os.Stat(cfg.OutputDir); !os.IsNotExist(err) {
+		t.Fatalf("release candidate with skipped loaders must not be staged: %v", err)
 	}
 }
 

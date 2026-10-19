@@ -10,7 +10,7 @@ Catalog indexes, files under `input/`, generator binaries, reports, credentials,
 `Dockerfile` fetches
 `https://github.com/red-hat-data-services/models-perf-benchmark-data.git`
 at `BENCHMARK_REVISION` inside its preparation stage. It runs that repository's
-`api-client/qualify.py --mode release` against the catalog at
+`api-client/qualify.py` (in release mode by default) against the catalog at
 `CATALOG_REVISION`, then runs the consumer validator and supported-version
 loader checks. Only the validated payload is copied into the runtime image.
 The qualifier generates the handoff and report during the build; no local
@@ -54,13 +54,49 @@ be present there; `BUILDER_IMAGE` can select a reviewed builder containing the
 matching Model Catalog tooling. Loader scripts are mounted as secrets and
 are not retained in the image layers.
 
+### Opt-in integration test build
+
+`BENCHMARK_QUALIFICATION_MODE=test` uses the producer's test qualification mode
+and accepts its `approved-for-testing`, non-promotable report. It does not
+rewrite the upstream approval policy or the generated report. Schema,
+manifest, digest, revision, and catalog compatibility validation still run.
+
+`SKIP_MODEL_CATALOG_LOADER_CHECKS=true` additionally skips the RHOAI loader
+executables and removes the need to supply their secrets. This flag is accepted
+only with test qualification. The defaults remain `release` and `false`.
+
+```sh
+make docker-build \
+  BENCHMARK_REVISION=4c2c0d67e6199eb7bf4505238b7e0e84391e949c \
+  BENCHMARK_QUALIFICATION_MODE=test \
+  SKIP_MODEL_CATALOG_LOADER_CHECKS=true \
+  CATALOG_DATA_REPOSITORY=https://github.com/Al-Pragliola/ai-hub-catalog.git \
+  BASE_IMAGE=registry.access.redhat.com/ubi9/ubi-minimal@sha256:a21d19f72557aa893a0f6ca1177bb1ffd91df6015e60470a116c50a6a05efcd9 \
+  DOCKER_IMAGE_TAG=test
+```
+
+Use a catalog repository containing your current commit, or set a matching
+`CATALOG_REVISION` explicitly. Docker/Podman and Konflux builds can pass both
+options as build arguments. The resulting image records
+`io.openshift.ai.benchmark-qualification-mode=test` and
+`io.openshift.ai.loader-checks-skipped=true`. It is an integration-test image;
+successful construction does not establish RHOAI consumer compatibility or
+release eligibility. Release pipelines must retain the default settings.
+
+Standalone validation accepts the same Make variables, or CLI flags
+`--benchmark-qualification-mode=test --skip-loader-checks`; the benchmark
+payload and report are still required.
+
+### Qualification and loader contract
+
 The generated payload and qualification report form the producer/consumer
 handoff boundary. The report remains outside the runtime payload. Product validation
 requires content-owner approval in that report and verifies its payload digest,
 manifest digest, included model IDs, source revisions, and exact catalog file
 hashes before staging either payload. The report must be produced in release
-mode and explicitly marked as eligible for promotion. The build cannot grant
-approval: it rejects an upstream policy marked `approved-for-testing`.
+mode and explicitly marked as eligible for promotion. Default release builds
+reject an upstream policy marked `approved-for-testing`. Opt-in test builds
+require test approval and a non-promotable report instead.
 Product mode refuses the committed fixture payload, report, loader, and version list.
 
 For standalone validation of an existing qualified handoff, use:
@@ -132,6 +168,10 @@ immutable source revisions, Git authentication and loader-check secrets, and
 relevant path triggers in
 `aipcc-product-management-configs`. Do not edit generated `.tekton` files
 directly.
+
+For integration testing, Konflux can use `BENCHMARK_QUALIFICATION_MODE=test`
+and `SKIP_MODEL_CATALOG_LOADER_CHECKS=true` with the Git token secret and pinned
+source revisions. Product builds must use release mode and real loader checks.
 
 Release promotion, stable tags, ImageStreams, registry publication, provenance, and rollback metadata belong to the follow-up release-configuration story.
 
