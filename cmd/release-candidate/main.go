@@ -15,8 +15,7 @@ func main() {
 	var fixtureOnly bool
 	flag.StringVar(&cfg.CatalogDir, "catalog-dir", "data", "directory containing generated catalogs and indexes")
 	flag.StringVar(&cfg.ProducerInputDir, "producer-input-dir", "input", "directory containing producer-only catalog inputs")
-	flag.StringVar(&cfg.BenchmarkDir, "benchmark-dir", "", "local qualified benchmark payload (otherwise fetch from --benchmark-repository)")
-	flag.StringVar(&cfg.BenchmarkRepository, "benchmark-repository", "https://github.com/red-hat-data-services/models-perf-benchmark-data.git", "benchmark repository; fetch data/ at the qualification report's benchmark_revision")
+	flag.StringVar(&cfg.BenchmarkDir, "benchmark-dir", "", "qualified benchmark payload directory (required)")
 	flag.StringVar(&cfg.BenchmarkQualificationReport, "benchmark-qualification-report", "", "qualification report for the benchmark payload (required)")
 	flag.StringVar(&cfg.RuntimeFileList, "runtime-files", "release/runtime-catalog-files.txt", "runtime catalog allowlist")
 	flag.StringVar(&cfg.OutputDir, "output-dir", "build/release-candidate", "validated image build context")
@@ -25,8 +24,8 @@ func main() {
 	flag.BoolVar(&fixtureOnly, "fixture-only", false, "use only the committed non-product payload, version list, and loader")
 	flag.Parse()
 
-	if cfg.BenchmarkDir == "" && cfg.BenchmarkRepository == "" {
-		fmt.Fprintln(os.Stderr, "release candidate validation failed: --benchmark-dir or --benchmark-repository is required")
+	if cfg.BenchmarkDir == "" {
+		fmt.Fprintln(os.Stderr, "release candidate validation failed: --benchmark-dir is required")
 		os.Exit(2)
 	}
 	if cfg.LoaderCheckDir == "" {
@@ -100,9 +99,6 @@ func rejectCommittedFixtures(cfg releasecandidate.Config) error {
 		{"--loader-check-dir", cfg.LoaderCheckDir, "internal/releasecandidate/testdata/loader-checks"},
 	}
 	for _, item := range paths {
-		if item.label == "--benchmark-dir" && item.actual == "" {
-			continue // The repository will supply this input after the fixture guards.
-		}
 		actual, err := resolvedAbsolute(item.actual)
 		if err != nil {
 			return fmt.Errorf("resolve %s: %w", item.label, err)

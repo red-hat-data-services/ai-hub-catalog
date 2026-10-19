@@ -1,0 +1,19 @@
+# Existing public CI proof using synthetic, pre-validated fixture data only.
+# Product builds use Dockerfile, which always fetches and validates its inputs.
+ARG BASE_IMAGE=registry.access.redhat.com/ubi9/ubi-minimal@sha256:a21d19f72557aa893a0f6ca1177bb1ffd91df6015e60470a116c50a6a05efcd9
+FROM ${BASE_IMAGE}
+ARG RELEASE_CANDIDATE_DIR=build/release-candidate-fixture
+COPY --chown=1001:0 ${RELEASE_CANDIDATE_DIR}/app/ /app/
+RUN test -d /app/data && \
+    test -s /app/benchmarks/manifest.json && \
+    /bin/sh -c 'for file in /app/data/*; do \
+      test -f "${file}" || exit 1; \
+      case "${file}" in *-catalog.yaml) ;; *) exit 1;; esac; \
+    done' && \
+    chmod -R a-w,a+rX /app
+USER 1001
+WORKDIR /app
+VOLUME ["/app/data", "/app/benchmarks"]
+CMD ["sleep", "infinity"]
+LABEL name="ai-hub-catalog-fixture" \
+      description="Synthetic CI fixture; not a product release"

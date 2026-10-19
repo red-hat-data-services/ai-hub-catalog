@@ -19,6 +19,10 @@ FIXTURE_RELEASE_CANDIDATE_DIR?=build/release-candidate-fixture
 RUNTIME_CATALOG_FILES?=release/runtime-catalog-files.txt
 BENCHMARK_DATA_DIR?=
 BENCHMARK_DATA_REPOSITORY?=https://github.com/red-hat-data-services/models-perf-benchmark-data.git
+BENCHMARK_REVISION?=
+CATALOG_DATA_REPOSITORY?=https://github.com/red-hat-data-services/ai-hub-catalog.git
+CATALOG_REVISION?=$(shell git rev-parse HEAD)
+GITHUB_TOKEN_FILE?=
 BENCHMARK_QUALIFICATION_REPORT?=
 MODEL_CATALOG_LOADER_CHECK_DIR?=
 FIXTURE_BENCHMARK_DATA_DIR=internal/releasecandidate/testdata/benchmarks
@@ -260,10 +264,13 @@ setup:
 
 # Docker targets
 
-# Validate every input and stage the exact bytes consumed by the unified Dockerfile.
-# Fetch data/ at the qualification report's revision unless a local payload is
-# supplied. Product use always requires the report and supported-version loaders.
+# Standalone validation of an already qualified payload. Docker builds run
+# fetching, qualification, and this validator inside their preparation stage.
 validate-release-candidate: validate-product-release-candidate-output-path
+	@if [ -z "$(BENCHMARK_DATA_DIR)" ]; then \
+		echo "BENCHMARK_DATA_DIR must point to a qualified benchmark payload"; \
+		exit 2; \
+	fi
 	@if [ -z "$(MODEL_CATALOG_LOADER_CHECK_DIR)" ]; then \
 		echo "MODEL_CATALOG_LOADER_CHECK_DIR must contain supported-version loader checks"; \
 		exit 2; \
@@ -276,7 +283,6 @@ validate-release-candidate: validate-product-release-candidate-output-path
 		--catalog-dir data \
 		--producer-input-dir input \
 		--benchmark-dir "$(BENCHMARK_DATA_DIR)" \
-		--benchmark-repository "$(BENCHMARK_DATA_REPOSITORY)" \
 		--benchmark-qualification-report "$(BENCHMARK_QUALIFICATION_REPORT)" \
 		--runtime-files "$(RUNTIME_CATALOG_FILES)" \
 		--output-dir "$(RELEASE_CANDIDATE_DIR)" \
@@ -297,12 +303,12 @@ validate-release-candidate-fixture: validate-fixture-release-candidate-output-pa
 		--supported-version-list "$(FIXTURE_SUPPORTED_VERSIONS)" \
 		--fixture-only
 
-# Docker only admits these two staging paths through .dockerignore. Reject Make
-# overrides before validation so a successful staging run cannot later fail at
-# COPY time. The release-candidate CLI itself intentionally remains configurable.
+# Keep the standalone validation output stable. The fixture output must match
+# its .dockerignore exception. The CLI itself remains configurable; product
+# Docker builds stage their payload inside the builder instead.
 validate-product-release-candidate-output-path:
 	@if [ "$(RELEASE_CANDIDATE_DIR)" != "build/release-candidate" ]; then \
-		echo "RELEASE_CANDIDATE_DIR must be exactly build/release-candidate for Make/Docker builds" >&2; \
+		echo "RELEASE_CANDIDATE_DIR must be exactly build/release-candidate for Make validation" >&2; \
 		exit 2; \
 	fi
 
@@ -343,23 +349,41 @@ test-release-candidate-output-path-guards:
 	rm "$$product_log" "$$fixture_log"; \
 	rmdir "$$tmp_root"
 
-# Build a product candidate only after the blocking validation succeeds.
-docker-build: validate-release-candidate
-	@if [ "$(CONTAINER_RUNTIME)" = "podman" ]; then \
-		podman build --build-arg RELEASE_CANDIDATE_DIR="$(RELEASE_CANDIDATE_DIR)" -t $(DOCKER_FULL_IMAGE_NAME) .; \
-	elif [ -f ~/.docker/config.json ]; then \
-		DOCKER_BUILDKIT=1 $(CONTAINER_RUNTIME) build \
-			--secret id=dockerconfig,src=$$HOME/.docker/config.json \
-			--build-arg BUILDKIT_INLINE_CACHE=1 \
-			--build-arg RELEASE_CANDIDATE_DIR="$(RELEASE_CANDIDATE_DIR)" \
-			-t $(DOCKER_FULL_IMAGE_NAME) .; \
+# No host-side benchmark checkout, report, or staged payload is required.
+# BuildKit/Podman secrets keep Git credentials and loader scripts out of layers.
+docker-build:
+	@set -eu; \
+	set --; \
+	if [ -n "$(GITHUB_TOKEN_FILE)" ]; then \
+		set -- "$$@" --secret "id=github_token,src=$(GITHUB_TOKEN_FILE)"; \
 	else \
-		$(CONTAINER_RUNTIME) build --build-arg RELEASE_CANDIDATE_DIR="$(RELEASE_CANDIDATE_DIR)" -t $(DOCKER_FULL_IMAGE_NAME) .; \
-	fi
+		if [ -z "$${GITHUB_TOKEN:-}" ] && command -v gh >/dev/null 2>&1; then \
+			GITHUB_TOKEN="$$(gh auth token)"; \
+		fi; \
+		if [ -n "$${GITHUB_TOKEN:-}" ]; then \
+			export GITHUB_TOKEN; \
+			set -- "$$@" --secret id=github_token,env=GITHUB_TOKEN; \
+		fi; \
+	fi; \
+	if [ -n "$(MODEL_CATALOG_LOADER_CHECK_DIR)" ]; then \
+		while IFS= read -r version; do \
+			case "$$version" in ''|\#*) continue ;; esac; \
+			set -- "$$@" --secret "id=$$version,src=$(MODEL_CATALOG_LOADER_CHECK_DIR)/$$version"; \
+		done < release/supported-model-catalog-versions.txt; \
+	fi; \
+	if [ -n "$(BASE_IMAGE)" ]; then set -- "$$@" --build-arg "BASE_IMAGE=$(BASE_IMAGE)"; fi; \
+	if [ -n "$(BUILDER_IMAGE)" ]; then set -- "$$@" --build-arg "BUILDER_IMAGE=$(BUILDER_IMAGE)"; fi; \
+	DOCKER_BUILDKIT=1 $(CONTAINER_RUNTIME) build "$$@" \
+		--build-arg "BENCHMARK_DATA_REPOSITORY=$(BENCHMARK_DATA_REPOSITORY)" \
+		--build-arg "BENCHMARK_REVISION=$(BENCHMARK_REVISION)" \
+		--build-arg "CATALOG_DATA_REPOSITORY=$(CATALOG_DATA_REPOSITORY)" \
+		--build-arg "CATALOG_REVISION=$(CATALOG_REVISION)" \
+		-t $(DOCKER_FULL_IMAGE_NAME) .
 
 # Local/CI image-layout proof using only the committed non-product fixture.
 docker-build-fixture: validate-release-candidate-fixture
 	$(CONTAINER_RUNTIME) build \
+		-f Dockerfile.fixture \
 		--build-arg RELEASE_CANDIDATE_DIR="$(FIXTURE_RELEASE_CANDIDATE_DIR)" \
 		-t $(DOCKER_FULL_IMAGE_NAME)-fixture .
 	

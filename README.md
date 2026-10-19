@@ -177,46 +177,39 @@ must approve the reused downstream benchmark base for this unified component.
 Catalog indexes, producer inputs, reports, credentials, and `sample-data` are
 never packaged.
 
-```bash
-make validate-release-candidate \
-  BENCHMARK_QUALIFICATION_REPORT=/path/to/benchmark-qualification-report.json \
-  MODEL_CATALOG_LOADER_CHECK_DIR=/path/to/supported-version-checks
+The Dockerfile fetches the private
+[`models-perf-benchmark-data`](https://github.com/red-hat-data-services/models-perf-benchmark-data)
+repository during the build, runs its release qualifier, and validates the
+result before copying it to `/app/benchmarks`. No local benchmark folder,
+qualification report, or staged `build/` directory is required.
 
+```bash
 make docker-build \
-  BENCHMARK_QUALIFICATION_REPORT=/path/to/benchmark-qualification-report.json \
+  BENCHMARK_REVISION=<full-approved-benchmark-commit-sha> \
   MODEL_CATALOG_LOADER_CHECK_DIR=/path/to/supported-version-checks
 ```
 
-Both commands fetch `data/` from the private
-[`models-perf-benchmark-data`](https://github.com/red-hat-data-services/models-perf-benchmark-data)
-repository at the immutable `benchmark_revision` in the qualification report.
-Git must have read access through your credential helper (for example, after
-`gh auth setup-git`) or SSH; for SSH, set
-`BENCHMARK_DATA_REPOSITORY=git@github.com:red-hat-data-services/models-perf-benchmark-data.git`.
-The temporary checkout is removed after validation; only the validated data is
-staged at `build/release-candidate/app/benchmarks` and copied to `/app/benchmarks`.
+Both source revisions are immutable commit SHAs. `CATALOG_REVISION` defaults to
+the current Git commit, which must be available in `CATALOG_DATA_REPOSITORY`
+(the upstream catalog repository by default). When building a pushed fork
+commit, set that repository to your fork's HTTPS URL. The build checks that
+the local runtime catalog files match the fetched catalog commit.
 
-Release validation remains mandatory: the fetched `data/` must exactly match
-the approved, promotion-eligible qualification report, and all supported-version
-loader checks must pass. If qualification transformed or filtered the source,
-pass `BENCHMARK_DATA_DIR=/path/to/qualified/benchmark/data` to use that prepared
-payload instead of fetching. Neither command generates or approves the report.
+For private repository access, Make passes `GITHUB_TOKEN`, `GITHUB_TOKEN_FILE`,
+or your existing `gh auth token` as a build secret. The token needs read access
+to both repositories and is never copied into an image layer. Direct Docker
+or Podman builds can pass the same arguments and secrets; see
+[`release/README.md`](release/README.md).
 
-The first command runs the blocking release gate without building an image;
-`make docker-build` runs the same gate before invoking Docker or Podman.
-A bare `docker build .` still requires the validated staging directory.
-See [`release/README.md`](release/README.md)
-for the handoff and validation contract. `make validate-release-candidate-fixture`
-is a non-product CI proof only.
+Release validation remains mandatory inside the Dockerfile: the fetched
+revision must contain the producer qualifier and release-approved exclusions,
+and the RHOAI 3.4 and 3.5 loader checks must pass. Testing-only approval fails
+the build. The loader executables are also supplied as build secrets; their
+runtime dependencies must be available in the builder image.
 
-The Make/Docker flow uses fixed staging directories:
-`build/release-candidate` for product inputs and
-`build/release-candidate-fixture` for the committed fixture. Overriding
-`RELEASE_CANDIDATE_DIR` or `FIXTURE_RELEASE_CANDIDATE_DIR` is rejected before
-validation because `.dockerignore` exposes only those directories to the image
-build. Standalone callers may still invoke `go run ./cmd/release-candidate`
-with an arbitrary `--output-dir`; that output is not automatically a Docker
-build context.
+`make validate-release-candidate` remains available for standalone validation
+of an already qualified local handoff. Public CI uses the existing synthetic
+fixture through `Dockerfile.fixture` and does not publish an image.
 
 The dual-payload loader matrix covers RHOAI 3.4 and 3.5. RHOAI 2.25 remains a
 catalog-only consumer because its Model Catalog implementation has no benchmark
@@ -256,7 +249,7 @@ docker rm -f catalog
 # Build with custom image name and tag
 DOCKER_IMAGE_NAME=my-model-catalog DOCKER_IMAGE_TAG=v1.0 \
   make docker-build \
-  BENCHMARK_QUALIFICATION_REPORT=/path/to/benchmark-qualification-report.json \
+  BENCHMARK_REVISION=<full-approved-benchmark-commit-sha> \
   MODEL_CATALOG_LOADER_CHECK_DIR=/path/to/supported-version-checks
 
 # View image details after build

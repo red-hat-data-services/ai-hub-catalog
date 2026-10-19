@@ -26,7 +26,6 @@ type Config struct {
 	CatalogDir                   string
 	ProducerInputDir             string
 	BenchmarkDir                 string
-	BenchmarkRepository          string
 	BenchmarkQualificationReport string
 	RuntimeFileList              string
 	OutputDir                    string
@@ -199,14 +198,6 @@ type qualificationReport struct {
 func ValidateAndStage(cfg Config) (Report, error) {
 	var report Report
 	var err error
-	if cfg.BenchmarkDir == "" && cfg.BenchmarkRepository != "" && !cfg.FixtureOnly {
-		checkout, err := fetchBenchmarkData(cfg.BenchmarkRepository, cfg.BenchmarkQualificationReport)
-		if err != nil {
-			return report, err
-		}
-		defer os.RemoveAll(checkout)
-		cfg.BenchmarkDir = filepath.Join(checkout, "data")
-	}
 	cfg, err = normalizeConfig(cfg)
 	if err != nil {
 		return report, err
