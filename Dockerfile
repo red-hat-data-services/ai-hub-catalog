@@ -5,6 +5,8 @@ ARG BASE_IMAGE=registry.redhat.io/ubi9/ubi-minimal-pqc@sha256:8a842ac769de709143
 FROM ${BASE_IMAGE}
 
 # This directory is created only by the blocking release-candidate validator.
+# Run make docker-build to fetch models-perf-benchmark-data/data at the report's
+# revision, validate it, and stage it as app/benchmarks before this COPY.
 # It contains catalog runtime files and a qualified benchmark handoff; generator
 # indexes, source inputs, reports, credentials, and sample-data are excluded.
 ARG RELEASE_CANDIDATE_DIR=build/release-candidate

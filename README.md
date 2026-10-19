@@ -179,18 +179,33 @@ never packaged.
 
 ```bash
 make validate-release-candidate \
-  BENCHMARK_DATA_DIR=/path/to/qualified/benchmark/data \
   BENCHMARK_QUALIFICATION_REPORT=/path/to/benchmark-qualification-report.json \
   MODEL_CATALOG_LOADER_CHECK_DIR=/path/to/supported-version-checks
 
 make docker-build \
-  BENCHMARK_DATA_DIR=/path/to/qualified/benchmark/data \
   BENCHMARK_QUALIFICATION_REPORT=/path/to/benchmark-qualification-report.json \
   MODEL_CATALOG_LOADER_CHECK_DIR=/path/to/supported-version-checks
 ```
 
-The first command is the blocking release gate and stages the exact image bytes
-under `build/release-candidate`. See [`release/README.md`](release/README.md)
+Both commands fetch `data/` from the private
+[`models-perf-benchmark-data`](https://github.com/red-hat-data-services/models-perf-benchmark-data)
+repository at the immutable `benchmark_revision` in the qualification report.
+Git must have read access through your credential helper (for example, after
+`gh auth setup-git`) or SSH; for SSH, set
+`BENCHMARK_DATA_REPOSITORY=git@github.com:red-hat-data-services/models-perf-benchmark-data.git`.
+The temporary checkout is removed after validation; only the validated data is
+staged at `build/release-candidate/app/benchmarks` and copied to `/app/benchmarks`.
+
+Release validation remains mandatory: the fetched `data/` must exactly match
+the approved, promotion-eligible qualification report, and all supported-version
+loader checks must pass. If qualification transformed or filtered the source,
+pass `BENCHMARK_DATA_DIR=/path/to/qualified/benchmark/data` to use that prepared
+payload instead of fetching. Neither command generates or approves the report.
+
+The first command runs the blocking release gate without building an image;
+`make docker-build` runs the same gate before invoking Docker or Podman.
+A bare `docker build .` still requires the validated staging directory.
+See [`release/README.md`](release/README.md)
 for the handoff and validation contract. `make validate-release-candidate-fixture`
 is a non-product CI proof only.
 
@@ -241,7 +256,6 @@ docker rm -f catalog
 # Build with custom image name and tag
 DOCKER_IMAGE_NAME=my-model-catalog DOCKER_IMAGE_TAG=v1.0 \
   make docker-build \
-  BENCHMARK_DATA_DIR=/path/to/qualified/benchmark/data \
   BENCHMARK_QUALIFICATION_REPORT=/path/to/benchmark-qualification-report.json \
   MODEL_CATALOG_LOADER_CHECK_DIR=/path/to/supported-version-checks
 

@@ -13,11 +13,26 @@ product release at `sample-data`, at an unqualified checkout, or at this
 repository's committed fixture. Private benchmark data must never be committed
 to this repository.
 
+When `BENCHMARK_DATA_DIR` is omitted, the release command fetches the private
+`https://github.com/red-hat-data-services/models-perf-benchmark-data.git`
+repository and reads its `data/` directory. It checks out the immutable
+`benchmark_revision` in `BENCHMARK_QUALIFICATION_REPORT`, never a moving branch.
+The report must already be approved and promotion-eligible. Fetching does not
+qualify the source: the same payload hashes, catalog compatibility checks, and
+loader checks must pass before anything is staged. If the producer filtered or
+transformed the source, supply its qualified output using `BENCHMARK_DATA_DIR`.
+
+Git uses the host's credential helper or SSH configuration. For example, run
+`gh auth setup-git` for HTTPS access, or set
+`BENCHMARK_DATA_REPOSITORY=git@github.com:red-hat-data-services/models-perf-benchmark-data.git`.
+Do not put tokens in the repository URL. The checkout lives in a temporary
+directory outside the image context and is removed on success or failure.
+Credentials and Git metadata are never staged into the runtime image.
+
 Create and validate the complete build context with one blocking command:
 
 ```sh
 make validate-release-candidate \
-  BENCHMARK_DATA_DIR=/path/to/qualified/benchmark/data \
   BENCHMARK_QUALIFICATION_REPORT=/path/to/benchmark-qualification-report.json \
   MODEL_CATALOG_LOADER_CHECK_DIR=/path/to/supported-version-checks
 ```
@@ -26,7 +41,6 @@ On success, the exact image payload is staged under `build/release-candidate/app
 
 ```sh
 make docker-build \
-  BENCHMARK_DATA_DIR=/path/to/qualified/benchmark/data \
   BENCHMARK_QUALIFICATION_REPORT=/path/to/benchmark-qualification-report.json \
   MODEL_CATALOG_LOADER_CHECK_DIR=/path/to/supported-version-checks
 ```
@@ -39,8 +53,9 @@ validator because `.dockerignore` admits only those paths. The underlying
 standalone validation or development, but such output is not consumed by the
 Docker targets.
 
-`BENCHMARK_DATA_DIR` and `BENCHMARK_QUALIFICATION_REPORT` form the handoff
-boundary. The report remains outside the runtime payload. Product validation
+The benchmark payload (fetched or supplied with `BENCHMARK_DATA_DIR`) and
+`BENCHMARK_QUALIFICATION_REPORT` form the handoff boundary. The report remains
+outside the runtime payload. Product validation
 requires content-owner approval in that report and verifies its payload digest,
 manifest digest, included model IDs, source revisions, and exact catalog file
 hashes before staging either payload. The report must be produced in release

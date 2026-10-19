@@ -18,6 +18,7 @@ RELEASE_CANDIDATE_DIR?=build/release-candidate
 FIXTURE_RELEASE_CANDIDATE_DIR?=build/release-candidate-fixture
 RUNTIME_CATALOG_FILES?=release/runtime-catalog-files.txt
 BENCHMARK_DATA_DIR?=
+BENCHMARK_DATA_REPOSITORY?=https://github.com/red-hat-data-services/models-perf-benchmark-data.git
 BENCHMARK_QUALIFICATION_REPORT?=
 MODEL_CATALOG_LOADER_CHECK_DIR?=
 FIXTURE_BENCHMARK_DATA_DIR=internal/releasecandidate/testdata/benchmarks
@@ -260,13 +261,9 @@ setup:
 # Docker targets
 
 # Validate every input and stage the exact bytes consumed by the unified Dockerfile.
-# Product use requires the qualified private payload and one loader executable
-# per supported Model Catalog version.
+# Fetch data/ at the qualification report's revision unless a local payload is
+# supplied. Product use always requires the report and supported-version loaders.
 validate-release-candidate: validate-product-release-candidate-output-path
-	@if [ -z "$(BENCHMARK_DATA_DIR)" ]; then \
-		echo "BENCHMARK_DATA_DIR must point to a qualified benchmark payload"; \
-		exit 2; \
-	fi
 	@if [ -z "$(MODEL_CATALOG_LOADER_CHECK_DIR)" ]; then \
 		echo "MODEL_CATALOG_LOADER_CHECK_DIR must contain supported-version loader checks"; \
 		exit 2; \
@@ -279,6 +276,7 @@ validate-release-candidate: validate-product-release-candidate-output-path
 		--catalog-dir data \
 		--producer-input-dir input \
 		--benchmark-dir "$(BENCHMARK_DATA_DIR)" \
+		--benchmark-repository "$(BENCHMARK_DATA_REPOSITORY)" \
 		--benchmark-qualification-report "$(BENCHMARK_QUALIFICATION_REPORT)" \
 		--runtime-files "$(RUNTIME_CATALOG_FILES)" \
 		--output-dir "$(RELEASE_CANDIDATE_DIR)" \
