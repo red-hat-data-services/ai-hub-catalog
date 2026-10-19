@@ -1,105 +1,101 @@
-# Unified data image inputs
+# Unified data image builds
 
-The release candidate contains two runtime payloads:
+The image provides generated runtime catalogs at `/app/data` and benchmark
+data at `/app/benchmarks`. Only catalogs listed in `runtime-catalog-files.txt`
+are shipped. Catalog indexes, `input/`, credentials, reports, Git metadata,
+and build tools stay outside the runtime image.
 
-- the generated catalog files listed in `runtime-catalog-files.txt`, installed at `/app/data`;
-- the qualified private benchmark handoff, installed at `/app/benchmarks`.
+## Default build
 
-Catalog indexes, files under `input/`, generator binaries, reports, credentials, and the benchmark producer are producer-only inputs. They are validated where applicable but are not copied into the runtime image. The existing models catalog remains in the runtime allowlist to preserve the current image contract.
-
-`Dockerfile` fetches
+`Dockerfile` defaults to `VALIDATE_RELEASE=false`. It fetches the private
 `https://github.com/red-hat-data-services/models-perf-benchmark-data.git`
-at `BENCHMARK_REVISION` inside its preparation stage. It runs that repository's
-`api-client/qualify.py` (in release mode by default) against the catalog at
-`CATALOG_REVISION`, then runs the consumer validator and supported-version
-loader checks. Only the validated payload is copied into the runtime image.
-The qualifier generates the handoff and report during the build; no local
-benchmark checkout, report, or staged payload is required. Private benchmark
-data must never be committed to this repository.
+repository at the immutable `BENCHMARK_REVISION` pinned in the Dockerfile and
+copies `data/` unchanged. It needs no local benchmark files, approval report,
+catalog revision, or loader scripts.
 
-Build with full immutable commit SHAs, using a benchmark revision that contains
-the producer qualifier and release-approved exclusion policy:
+```sh
+make docker-build
+```
+
+Make obtains Git credentials from `GITHUB_TOKEN_FILE`, the `GITHUB_TOKEN`
+environment variable, or an existing `gh` login, in that order. Only read
+access to the benchmark repository is needed for the default build. The token
+is a build secret; do not put it in a build argument or repository URL.
+
+For direct Docker or Podman builds, supply the same secret:
+
+```sh
+docker build --secret id=github_token,env=GITHUB_TOKEN -t ai-hub-catalog:local .
+```
+
+The default runtime base requires registry.redhat.io credentials. Local tests
+can override it with
+`BASE_IMAGE=registry.access.redhat.com/ubi9/ubi-minimal@sha256:a21d19f72557aa893a0f6ca1177bb1ffd91df6015e60470a116c50a6a05efcd9`
+(a Make variable or `--build-arg` for Docker/Podman).
+
+The normal build does not run producer qualification, consumer content checks,
+or RHOAI loader scripts. It still checks the basic image layout and makes
+payload files read-only and readable by arbitrary non-root users. The label
+`io.openshift.ai.release-validation=false` records the selected behavior.
+Private benchmark data must never be committed to this repository.
+
+## Opt-in release validation
+
+Set `VALIDATE_RELEASE=true` to run the existing release checks:
 
 ```sh
 make docker-build \
-  BENCHMARK_REVISION=<full-approved-benchmark-commit-sha> \
+  VALIDATE_RELEASE=true \
+  BENCHMARK_REVISION=<full-release-approved-benchmark-commit-sha> \
   MODEL_CATALOG_LOADER_CHECK_DIR=/path/to/supported-version-checks
 ```
 
-Make defaults `CATALOG_REVISION` to the local Git commit and
-`CATALOG_DATA_REPOSITORY` to the upstream catalog repository. The commit must
-already be available remotely; use your fork's HTTPS URL when needed. The
-build compares the context's runtime catalog files with that commit before
-qualification. `BENCHMARK_DATA_REPOSITORY` can also override the benchmark URL.
+This additionally fetches `CATALOG_REVISION` from `CATALOG_DATA_REPOSITORY`,
+compares the runtime catalog bytes with the build context, runs the upstream
+`api-client/qualify.py --mode release`, validates its handoff, and runs the
+RHOAI loader checks. Make defaults the catalog revision to the current Git
+commit and the URL to the upstream catalog repository. Use your fork URL when
+the commit exists only there. The token must read both repositories.
 
-Make supplies private Git access using `GITHUB_TOKEN_FILE`, the `GITHUB_TOKEN`
-environment variable, or the token from an existing `gh` login, in that order.
-The token must have read access to both repositories. Credentials are passed
-as a build secret, never as a build argument or part of a repository URL.
-Git checkouts are temporary and are removed before the preparation layer is
-saved. Direct Docker builds use the same contract:
+The equivalent direct build is:
 
 ```sh
 docker build \
-  --build-arg BENCHMARK_REVISION=<full-approved-benchmark-commit-sha> \
+  --build-arg VALIDATE_RELEASE=true \
+  --build-arg BENCHMARK_REVISION=<full-release-approved-benchmark-commit-sha> \
   --build-arg CATALOG_REVISION=<full-catalog-commit-sha> \
   --secret id=github_token,env=GITHUB_TOKEN \
   --secret id=rhoai-3.4,src=/path/to/supported-version-checks/rhoai-3.4 \
   --secret id=rhoai-3.5,src=/path/to/supported-version-checks/rhoai-3.5 \
-  -t model-metadata-collection:latest .
+  -t ai-hub-catalog:validated .
 ```
 
-Loader executables run inside the preparation stage. Their dependencies must
-be present there; `BUILDER_IMAGE` can select a reviewed builder containing the
-matching Model Catalog tooling. Loader scripts are mounted as secrets and
-are not retained in the image layers.
+Approval must be `approved`, qualification mode `release`, and the report
+promotion-eligible. The pinned benchmark commit currently has
+`approved-for-testing`, so enabling validation rejects it. Neither this build
+switch nor advisory CI grants release approval.
 
-### Opt-in integration test build
+The producer qualifier can filter the benchmark payload. Consequently the
+default image and an image built with validation enabled can contain different
+benchmark sets. With the current pin, the raw source has 131 models; the
+testing-qualified subset previously exercised has 103. Default builds package
+the raw source and do not claim compatibility for all of those models.
 
-`BENCHMARK_QUALIFICATION_MODE=test` uses the producer's test qualification mode
-and accepts its `approved-for-testing`, non-promotable report. It does not
-rewrite the upstream approval policy or the generated report. Schema,
-manifest, digest, revision, and catalog compatibility validation still run.
+The two loader executables are named `rhoai-3.4` and `rhoai-3.5`. Each must use
+the matching Model Catalog consumer, load both payloads, assert their records,
+and print `MODEL_CATALOG_LOADER_CHECK_OK=<version>` only after success. They
+receive `MODEL_CATALOG_VERSION`, `RELEASE_CANDIDATE_ROOT`, `CATALOG_DATA_DIR`,
+and `BENCHMARK_DATA_DIR`. Their dependencies must exist in the preparation
+image; `BUILDER_IMAGE` can select a reviewed builder with the required tooling.
+The repository does not provide these product-version runners.
 
-`SKIP_MODEL_CATALOG_LOADER_CHECKS=true` additionally skips the RHOAI loader
-executables and removes the need to supply their secrets. This flag is accepted
-only with test qualification. The defaults remain `release` and `false`.
+Consumer validation verifies syntax, identities, references, catalog/benchmark
+compatibility, report hashes and model membership, manifests, safe paths,
+staged bytes, and file permissions. It detects loader modifications to the
+payload. Matching uses complete model IDs case-insensitively, without aliases.
+Metric-specific schemas remain a producer/consumer contract.
 
-```sh
-make docker-build \
-  BENCHMARK_REVISION=4c2c0d67e6199eb7bf4505238b7e0e84391e949c \
-  BENCHMARK_QUALIFICATION_MODE=test \
-  SKIP_MODEL_CATALOG_LOADER_CHECKS=true \
-  CATALOG_DATA_REPOSITORY=https://github.com/Al-Pragliola/ai-hub-catalog.git \
-  BASE_IMAGE=registry.access.redhat.com/ubi9/ubi-minimal@sha256:a21d19f72557aa893a0f6ca1177bb1ffd91df6015e60470a116c50a6a05efcd9 \
-  DOCKER_IMAGE_TAG=test
-```
-
-Use a catalog repository containing your current commit, or set a matching
-`CATALOG_REVISION` explicitly. Docker/Podman and Konflux builds can pass both
-options as build arguments. The resulting image records
-`io.openshift.ai.benchmark-qualification-mode=test` and
-`io.openshift.ai.loader-checks-skipped=true`. It is an integration-test image;
-successful construction does not establish RHOAI consumer compatibility or
-release eligibility. Release pipelines must retain the default settings.
-
-Standalone validation accepts the same Make variables, or CLI flags
-`--benchmark-qualification-mode=test --skip-loader-checks`; the benchmark
-payload and report are still required.
-
-### Qualification and loader contract
-
-The generated payload and qualification report form the producer/consumer
-handoff boundary. The report remains outside the runtime payload. Product validation
-requires content-owner approval in that report and verifies its payload digest,
-manifest digest, included model IDs, source revisions, and exact catalog file
-hashes before staging either payload. The report must be produced in release
-mode and explicitly marked as eligible for promotion. Default release builds
-reject an upstream policy marked `approved-for-testing`. Opt-in test builds
-require test approval and a non-promotable report instead.
-Product mode refuses the committed fixture payload, report, loader, and version list.
-
-For standalone validation of an existing qualified handoff, use:
+Standalone validation of an existing qualified handoff remains available:
 
 ```sh
 make validate-release-candidate \
@@ -108,73 +104,54 @@ make validate-release-candidate \
   MODEL_CATALOG_LOADER_CHECK_DIR=/path/to/supported-version-checks
 ```
 
-This command stages `build/release-candidate/app` for inspection. The product
-Dockerfile does not consume that host directory. Public CI retains its
-synthetic fixture validation and uses `Dockerfile.fixture` to package
-`build/release-candidate-fixture/app`. Make fixes these standalone/fixture
-output paths; the underlying CLI accepts an arbitrary `--output-dir`.
+This stages `build/release-candidate/app` for inspection; the Dockerfile does
+not consume that host directory. The synthetic fixture targets and
+`Dockerfile.fixture` remain separate public CI checks. The CLI also retains
+its explicit test-qualification options for standalone diagnostics.
 
-For standalone validation, the loader-check directory must contain exactly one executable per entry in
-`supported-model-catalog-versions.txt`, named for that version, with no missing
-or extra files. The dual-payload compatibility matrix contains RHOAI 3.4 and
-3.5. RHOAI 2.25 is catalog-only because its Model Catalog implementation has no
-benchmark-loading option; the generic release validation still checks that the
-benchmark payload is present, qualified, and compatible with the catalog.
-Each executable receives
-`MODEL_CATALOG_VERSION`, `RELEASE_CANDIDATE_ROOT`, `CATALOG_DATA_DIR`, and
-`BENCHMARK_DATA_DIR`, must recursively initialize and load the candidate, and
-only then print `MODEL_CATALOG_LOADER_CHECK_OK=<version>`. The release command
-fails when membership differs, an entry is not executable, a check fails, or
-the attestation is absent. The release owner supplies and reviews the matching
-product-version executables; they are intentionally not mocked in this data
-repository. `make validate-release-candidate-fixture` uses an isolated synthetic
-payload, version list, and behavior-checking loader; its CLI guard accepts only
-those committed fixture paths and a separate `build/release-candidate-fixture`
-output.
+## Advisory GitHub CI
 
-Each product loader check must use the Model Catalog operand pinned by the exact
-released operator bundle under test, generate that release's catalog source
-configuration against the staged `/app/data` files, load `/app/benchmarks`, and
-assert the expected catalog and benchmark records through the consumer. Server
-startup or readiness alone is not a successful compatibility check.
+`build-and-push-static-model-catalog-data.yml` has an independent
+**Release validation (advisory)** job. It calls
+`make docker-build VALIDATE_RELEASE=true` with job-level
+`continue-on-error: true`, records the outcome in the job summary, and does not
+publish an image. A failed check does not fail the workflow. Keep this advisory
+job out of required branch checks until the team decides to make it blocking.
 
-Validation rejects malformed YAML, JSON, and NDJSON (including duplicate
-mapping/object keys); duplicate catalog, provider, model, and benchmark artifact
-identifiers; missing or escaping producer references; index/catalog
-inconsistency, including agent path-to-repository URL drift; manifest/file
-mismatches; qualification-report mismatches; missing provider or variant-group
-references; unexpected benchmark files; benchmark records stored under the
-wrong model path; catalog-to-benchmark incompatibility; symlinks; unsafe or
-overlapping paths; and a staged tree that is not readable by an arbitrary
-non-root user. The image is staged from the exact bytes that were validated,
-and loader hooks are prevented from changing them. Catalog-to-benchmark matching
-compares the complete namespace and model name case-insensitively; it does not
-guess aliases or ignore spelling and punctuation differences.
+Configure these repository secrets to run it:
 
-The validator enforces syntax, identity, reference, and generic record-path
-contracts for evaluation, performance, and security NDJSON. Metric-specific
-field schemas and semantic ranges are not defined in this repository; that
-remains an explicit producer/consumer contract to approve rather than a schema
-invented by this release gate.
+| Secret | Value |
+| --- | --- |
+| `BENCHMARK_GITHUB_TOKEN` | Token with read access to the benchmark and selected catalog repositories |
+| `RHOAI_3_4_LOADER_CHECK` | Contents of the reviewed RHOAI 3.4 executable script |
+| `RHOAI_3_5_LOADER_CHECK` | Contents of the reviewed RHOAI 3.5 executable script |
 
-## Konflux handoff boundary
+Optional repository variables are `BENCHMARK_REVISION` (otherwise use the
+Dockerfile pin) and `RELEASE_VALIDATION_BUILDER_IMAGE` (builder with loader
+dependencies). CI selects the PR head commit and its repository for catalog
+qualification, rather than an ephemeral merge commit.
 
-`Dockerfile` fetches and validates the unified payload during the build.
-`Dockerfile.konflux` intentionally retains the current catalog-only behavior
-so RHOAIENG-97415 can merge without breaking
-existing Konflux pull-request and push builds. RHOAIENG-97416 must atomically
-switch the product path to the unified Dockerfile contract after it wires the
-immutable source revisions, Git authentication and loader-check secrets, and
-relevant path triggers in
-`aipcc-product-management-configs`. Do not edit generated `.tekton` files
-directly.
+Missing secrets are reported as unavailable inputs, not as a successful
+validation. Fork PRs normally do not receive these secrets. The job uses the
+standard `pull_request` event; it does not elevate fork access. Unit tests and
+the public fixture image job remain independent of this advisory check.
 
-For integration testing, Konflux can use `BENCHMARK_QUALIFICATION_MODE=test`
-and `SKIP_MODEL_CATALOG_LOADER_CHECKS=true` with the Git token secret and pinned
-source revisions. Product builds must use release mode and real loader checks.
+## Konflux handoff
 
-Release promotion, stable tags, ImageStreams, registry publication, provenance, and rollback metadata belong to the follow-up release-configuration story.
+Select `Dockerfile` with build context `.`. Default builds need no validation
+flags, catalog revision, or loader scripts. The benchmark SHA is already
+pinned; override `BENCHMARK_REVISION` only when selecting a different commit.
+The default fetch still requires a `github_token` build secret under
+`/run/secrets/github_token` and registry access to the selected base image.
+Pipeline checkout credentials alone do not expose that secret inside a build.
 
-The digest-pinned UBI candidate base in `Dockerfile` is reused from the current
-downstream benchmark component. Productization approval for using that digest
-in this unified component is required before promotion.
+The current preparation stage also downloads RPM, Python, and Go dependencies.
+Configure the required network access or adapt prefetch and builder tooling
+before using a hermetic pipeline. Local checks cover x86_64; validate other
+requested architectures in Konflux.
+
+When enabling release validation, supply `VALIDATE_RELEASE=true`, the catalog
+revision/repository, and both loader secrets as described above. Regenerate
+generated `.tekton` files through their owning product-management configuration;
+this change does not edit them. `Dockerfile.konflux` retains its existing
+catalog-only behavior until that pipeline configuration selects `Dockerfile`.

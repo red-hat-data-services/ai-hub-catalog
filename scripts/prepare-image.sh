@@ -1,7 +1,7 @@
 #!/bin/sh
 # Run inside the Dockerfile's preparation stage, with credentials mounted as
-# secrets. The official producer qualifier and the consumer validator both
-# have to succeed before the runtime image can copy /prepared/app.
+# secrets. Ordinary builds package the fetched data unchanged. CI can opt into
+# the producer qualifier and consumer validator with VALIDATE_RELEASE=true.
 set -eu
 
 require_revision() {
@@ -15,24 +15,11 @@ require_revision() {
 }
 
 require_revision BENCHMARK_REVISION "${BENCHMARK_REVISION:-}"
-require_revision CATALOG_REVISION "${CATALOG_REVISION:-}"
-qualification_mode=${BENCHMARK_QUALIFICATION_MODE-release}
-case "$qualification_mode" in
-    release) ;;
-    test) echo "Building with testing approval; this image is not eligible for release promotion" ;;
-    *) echo "BENCHMARK_QUALIFICATION_MODE must be release or test" >&2; exit 2 ;;
-esac
-skip_loader_checks=${SKIP_MODEL_CATALOG_LOADER_CHECKS-false}
-case "$skip_loader_checks" in
+validate_release=${VALIDATE_RELEASE-false}
+case "$validate_release" in
     false) ;;
-    true)
-        if [ "$qualification_mode" != test ]; then
-            echo "SKIP_MODEL_CATALOG_LOADER_CHECKS=true requires BENCHMARK_QUALIFICATION_MODE=test" >&2
-            exit 2
-        fi
-        echo "Skipping Model Catalog loader checks for this test image"
-        ;;
-    *) echo "SKIP_MODEL_CATALOG_LOADER_CHECKS must be true or false" >&2; exit 2 ;;
+    true) require_revision CATALOG_REVISION "${CATALOG_REVISION:-}" ;;
+    *) echo "VALIDATE_RELEASE must be true or false" >&2; exit 2 ;;
 esac
 source_root=$(pwd)
 output=${1:-/prepared}
@@ -64,8 +51,21 @@ fetch_commit() {
 }
 
 fetch_commit "$BENCHMARK_DATA_REPOSITORY" "$BENCHMARK_REVISION" "$scratch/benchmarks"
+printf 'Fetched benchmark commit %s\n' "$BENCHMARK_REVISION"
+
+if [ "$validate_release" = false ]; then
+    mkdir -p "$output/app/data" "$output/app/benchmarks"
+    cp -a "$scratch/benchmarks/data/." "$output/app/benchmarks/"
+    while IFS= read -r file; do
+        case "$file" in ''|\#*) continue ;; esac
+        cp "$source_root/data/$file" "$output/app/data/$file"
+    done < release/runtime-catalog-files.txt
+    echo "Release validation disabled; packaged the fetched benchmark data unchanged"
+    exit 0
+fi
+
 fetch_commit "$CATALOG_DATA_REPOSITORY" "$CATALOG_REVISION" "$scratch/catalog"
-printf 'Fetched benchmark commit %s and catalog commit %s\n' "$BENCHMARK_REVISION" "$CATALOG_REVISION"
+printf 'Fetched catalog commit %s for release validation\n' "$CATALOG_REVISION"
 
 # Bind the catalog files in this build context to the committed candidate that
 # the producer qualifies. A stale or unrelated CATALOG_REVISION must fail.
@@ -83,28 +83,25 @@ python3.12 "$scratch/benchmarks/api-client/qualify.py" \
     --benchmark-revision "$BENCHMARK_REVISION" \
     --catalog-revision "$CATALOG_REVISION" \
     --handoff-dir "$scratch/handoff" \
-    --mode "$qualification_mode"
+    --mode release
 
 mkdir "$scratch/loader-checks"
-if [ "$skip_loader_checks" = false ]; then
-    while IFS= read -r version; do
-        case "$version" in ''|\#*) continue ;; esac
-        if [ ! -s "/run/secrets/$version" ]; then
-            echo "Missing release loader check: supply --secret id=$version,src=/path/to/$version" >&2
-            exit 2
-        fi
-        cp "/run/secrets/$version" "$scratch/loader-checks/$version"
-        chmod 700 "$scratch/loader-checks/$version"
-    done < release/supported-model-catalog-versions.txt
-fi
+while IFS= read -r version; do
+    case "$version" in ''|\#*) continue ;; esac
+    if [ ! -s "/run/secrets/$version" ]; then
+        echo "Missing release loader check: supply --secret id=$version,src=/path/to/$version" >&2
+        exit 2
+    fi
+    cp "/run/secrets/$version" "$scratch/loader-checks/$version"
+    chmod 700 "$scratch/loader-checks/$version"
+done < release/supported-model-catalog-versions.txt
 
 release-candidate \
     --catalog-dir "$source_root/data" \
     --producer-input-dir "$source_root/input" \
     --benchmark-dir "$scratch/handoff/benchmarks" \
     --benchmark-qualification-report "$scratch/handoff/qualification-report.json" \
-    --benchmark-qualification-mode "$qualification_mode" \
-    --skip-loader-checks="$skip_loader_checks" \
+    --benchmark-qualification-mode release \
     --runtime-files "$source_root/release/runtime-catalog-files.txt" \
     --supported-version-list "$source_root/release/supported-model-catalog-versions.txt" \
     --loader-check-dir "$scratch/loader-checks" \

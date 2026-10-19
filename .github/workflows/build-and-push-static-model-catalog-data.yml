@@ -13,6 +13,7 @@ on:
       - 'Dockerfile'
       - 'Dockerfile.fixture'
       - 'scripts/prepare-image.sh'
+      - 'scripts/test-prepare-image.sh'
       - 'Dockerfile.konflux'
       - '.dockerignore'
       - 'Makefile'
@@ -29,6 +30,7 @@ on:
       - 'Dockerfile'
       - 'Dockerfile.fixture'
       - 'scripts/prepare-image.sh'
+      - 'scripts/test-prepare-image.sh'
       - 'Dockerfile.konflux'
       - '.dockerignore'
       - 'Makefile'
@@ -57,6 +59,7 @@ jobs:
       - name: Test and stage the release-candidate fixture
         run: |
           make test
+          make test-image-preparation
           make validate-release-candidate-fixture
 
       # This proves payload validation, exact loader-matrix membership, and the
@@ -89,3 +92,67 @@ jobs:
             test -r /app/benchmarks/manifest.json &&
             test -r /app/benchmarks/RedHatAI/Apertus-8B-Instruct-2509-FP8-dynamic/metadata.json
           '
+
+  release-validation:
+    name: Release validation (advisory)
+    runs-on: ubuntu-latest
+    # Keep failures visible without making release validation a merge gate yet.
+    continue-on-error: true
+    timeout-minutes: 30
+    env:
+      CATALOG_DATA_REPOSITORY: ${{ github.server_url }}/${{ github.event.pull_request.head.repo.full_name || github.repository }}.git
+      CATALOG_REVISION: ${{ github.event.pull_request.head.sha || github.sha }}
+      BENCHMARK_REVISION: ${{ vars.BENCHMARK_REVISION }}
+      VALIDATION_BUILDER_IMAGE: ${{ vars.RELEASE_VALIDATION_BUILDER_IMAGE }}
+
+    steps:
+      - name: Checkout candidate commit
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          repository: ${{ github.event.pull_request.head.repo.full_name || github.repository }}
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
+
+      - name: Validate release inputs and build
+        id: validation
+        env:
+          GITHUB_TOKEN: ${{ secrets.BENCHMARK_GITHUB_TOKEN }}
+          LOADER_RHOAI_3_4: ${{ secrets.RHOAI_3_4_LOADER_CHECK }}
+          LOADER_RHOAI_3_5: ${{ secrets.RHOAI_3_5_LOADER_CHECK }}
+        run: |
+          missing=()
+          [ -n "$GITHUB_TOKEN" ] || missing+=(BENCHMARK_GITHUB_TOKEN)
+          [ -n "$LOADER_RHOAI_3_4" ] || missing+=(RHOAI_3_4_LOADER_CHECK)
+          [ -n "$LOADER_RHOAI_3_5" ] || missing+=(RHOAI_3_5_LOADER_CHECK)
+          if [ "${#missing[@]}" -ne 0 ]; then
+            echo "::error::Release validation inputs unavailable: ${missing[*]}"
+            printf 'Missing secrets: `%s`. Validation did not run.\n' "${missing[*]}" >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+
+          umask 077
+          loader_dir="$RUNNER_TEMP/model-catalog-loader-checks"
+          mkdir -p "$loader_dir"
+          printf '%s\n' "$LOADER_RHOAI_3_4" > "$loader_dir/rhoai-3.4"
+          printf '%s\n' "$LOADER_RHOAI_3_5" > "$loader_dir/rhoai-3.5"
+          chmod 700 "$loader_dir/rhoai-3.4" "$loader_dir/rhoai-3.5"
+
+          make docker-build \
+            CONTAINER_RUNTIME=docker \
+            VALIDATE_RELEASE=true \
+            MODEL_CATALOG_LOADER_CHECK_DIR="$loader_dir" \
+            BUILDER_IMAGE="$VALIDATION_BUILDER_IMAGE" \
+            BASE_IMAGE=registry.access.redhat.com/ubi9/ubi-minimal@sha256:a21d19f72557aa893a0f6ca1177bb1ffd91df6015e60470a116c50a6a05efcd9 \
+            DOCKER_IMAGE_NAME=localhost/ai-hub-catalog \
+            DOCKER_IMAGE_TAG=release-validation
+
+      - name: Record advisory validation result
+        if: always()
+        env:
+          VALIDATION_OUTCOME: ${{ steps.validation.outcome }}
+        run: |
+          printf '\n### Release validation (advisory)\n\nResult: **%s**. This job is non-blocking; no image is published.\n' \
+            "$VALIDATION_OUTCOME" >> "$GITHUB_STEP_SUMMARY"

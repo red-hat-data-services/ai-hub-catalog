@@ -52,5 +52,8 @@ jobs:
       - name: Verify release-candidate output path guards
         run: make test-release-candidate-output-path-guards
 
+      - name: Test image preparation defaults
+        run: make test-image-preparation
+
       - name: Validate release-candidate fixture
         run: make validate-release-candidate-fixture

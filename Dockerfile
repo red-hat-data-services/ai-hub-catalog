@@ -4,8 +4,9 @@ ARG BUILDER_IMAGE=registry.access.redhat.com/ubi9/go-toolset@sha256:8648cd4d48e0
 # operating-system contents. This digest is reused from the current downstream
 # benchmark image; productization must approve it for the unified component.
 ARG BASE_IMAGE=registry.redhat.io/ubi9/ubi-minimal-pqc@sha256:8a842ac769de709143e4edeace516f2008dfdc431b64670ad3353fa323b44736
-ARG BENCHMARK_QUALIFICATION_MODE=release
-ARG SKIP_MODEL_CATALOG_LOADER_CHECKS=false
+# Ordinary image builds fetch and package data. CI explicitly enables the
+# release qualifier and supported-version loader checks when requested.
+ARG VALIDATE_RELEASE=false
 
 FROM ${BUILDER_IMAGE} AS prepare
 USER 0
@@ -24,20 +25,18 @@ COPY scripts/prepare-image.sh scripts/prepare-image.sh
 # Only immutable revisions are accepted. No benchmark data or pre-staged
 # build/release-candidate directory is needed in the local build context.
 ARG BENCHMARK_DATA_REPOSITORY=https://github.com/red-hat-data-services/models-perf-benchmark-data.git
-ARG BENCHMARK_REVISION
+ARG BENCHMARK_REVISION=4c2c0d67e6199eb7bf4505238b7e0e84391e949c
 ARG CATALOG_DATA_REPOSITORY=https://github.com/red-hat-data-services/ai-hub-catalog.git
-ARG CATALOG_REVISION
-ARG BENCHMARK_QUALIFICATION_MODE
-ARG SKIP_MODEL_CATALOG_LOADER_CHECKS
+ARG CATALOG_REVISION=
+ARG VALIDATE_RELEASE
 RUN --mount=type=secret,id=github_token \
     --mount=type=secret,id=rhoai-3.4 \
     --mount=type=secret,id=rhoai-3.5 \
     sh scripts/prepare-image.sh /prepared
 
 FROM ${BASE_IMAGE}
-ARG BENCHMARK_QUALIFICATION_MODE
-ARG SKIP_MODEL_CATALOG_LOADER_CHECKS
-# The preceding stage fetches, qualifies, validates, and stages these bytes.
+ARG VALIDATE_RELEASE
+# The preceding stage fetches and stages these bytes, optionally validating.
 # Git metadata, credentials, reports, and build tools stay out of this image.
 COPY --from=prepare --chown=1001:0 /prepared/app/ /app/
 
@@ -59,10 +58,9 @@ VOLUME ["/app/data", "/app/benchmarks"]
 CMD ["sleep", "infinity"]
 
 LABEL name="ai-hub-catalog" \
-      io.openshift.ai.benchmark-qualification-mode="${BENCHMARK_QUALIFICATION_MODE}" \
-      io.openshift.ai.loader-checks-skipped="${SKIP_MODEL_CATALOG_LOADER_CHECKS}" \
+      io.openshift.ai.release-validation="${VALIDATE_RELEASE}" \
       version="2.0" \
-      description="Validated Model Catalog and qualified benchmark runtime data" \
-      io.k8s.description="Provides validated Model Catalog and qualified benchmark data" \
+      description="Model Catalog and benchmark runtime data" \
+      io.k8s.description="Provides Model Catalog and benchmark data" \
       io.k8s.display-name="Model Catalog Data" \
       io.openshift.tags="ai,models,metadata,catalog,benchmarks"

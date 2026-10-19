@@ -20,8 +20,7 @@ RUNTIME_CATALOG_FILES?=release/runtime-catalog-files.txt
 BENCHMARK_DATA_DIR?=
 BENCHMARK_DATA_REPOSITORY?=https://github.com/red-hat-data-services/models-perf-benchmark-data.git
 BENCHMARK_REVISION?=
-BENCHMARK_QUALIFICATION_MODE?=release
-SKIP_MODEL_CATALOG_LOADER_CHECKS?=false
+VALIDATE_RELEASE?=false
 CATALOG_DATA_REPOSITORY?=https://github.com/red-hat-data-services/ai-hub-catalog.git
 CATALOG_REVISION?=$(shell git rev-parse HEAD)
 GITHUB_TOKEN_FILE?=
@@ -226,7 +225,7 @@ run-with-report: run report
 dev: fmt vet test build
 
 # Full CI pipeline
-ci: deps check test test-release-candidate-output-path-guards validate-release-candidate-fixture build
+ci: deps check test test-image-preparation test-release-candidate-output-path-guards validate-release-candidate-fixture build
 
 # Create release build
 release: clean
@@ -266,14 +265,18 @@ setup:
 
 # Docker targets
 
-# Standalone validation of an already qualified payload. Docker builds run
-# fetching, qualification, and this validator inside their preparation stage.
+.PHONY: test-image-preparation
+test-image-preparation:
+	sh scripts/test-prepare-image.sh
+
+# Standalone validation of an already qualified payload. Docker builds opt into
+# qualification and this validator with VALIDATE_RELEASE=true.
 validate-release-candidate: validate-product-release-candidate-output-path
 	@if [ -z "$(BENCHMARK_DATA_DIR)" ]; then \
 		echo "BENCHMARK_DATA_DIR must point to a qualified benchmark payload"; \
 		exit 2; \
 	fi
-	@if [ "$(SKIP_MODEL_CATALOG_LOADER_CHECKS)" != "true" ] && [ -z "$(MODEL_CATALOG_LOADER_CHECK_DIR)" ]; then \
+	@if [ -z "$(MODEL_CATALOG_LOADER_CHECK_DIR)" ]; then \
 		echo "MODEL_CATALOG_LOADER_CHECK_DIR must contain supported-version loader checks"; \
 		exit 2; \
 	fi
@@ -286,8 +289,6 @@ validate-release-candidate: validate-product-release-candidate-output-path
 		--producer-input-dir input \
 		--benchmark-dir "$(BENCHMARK_DATA_DIR)" \
 		--benchmark-qualification-report "$(BENCHMARK_QUALIFICATION_REPORT)" \
-		--benchmark-qualification-mode "$(BENCHMARK_QUALIFICATION_MODE)" \
-		--skip-loader-checks="$(SKIP_MODEL_CATALOG_LOADER_CHECKS)" \
 		--runtime-files "$(RUNTIME_CATALOG_FILES)" \
 		--output-dir "$(RELEASE_CANDIDATE_DIR)" \
 		--loader-check-dir "$(MODEL_CATALOG_LOADER_CHECK_DIR)" \
@@ -369,7 +370,7 @@ docker-build:
 			set -- "$$@" --secret id=github_token,env=GITHUB_TOKEN; \
 		fi; \
 	fi; \
-	if [ "$(SKIP_MODEL_CATALOG_LOADER_CHECKS)" != "true" ] && [ -n "$(MODEL_CATALOG_LOADER_CHECK_DIR)" ]; then \
+	if [ "$(VALIDATE_RELEASE)" = "true" ] && [ -n "$(MODEL_CATALOG_LOADER_CHECK_DIR)" ]; then \
 		while IFS= read -r version; do \
 			case "$$version" in ''|\#*) continue ;; esac; \
 			set -- "$$@" --secret "id=$$version,src=$(MODEL_CATALOG_LOADER_CHECK_DIR)/$$version"; \
@@ -377,11 +378,10 @@ docker-build:
 	fi; \
 	if [ -n "$(BASE_IMAGE)" ]; then set -- "$$@" --build-arg "BASE_IMAGE=$(BASE_IMAGE)"; fi; \
 	if [ -n "$(BUILDER_IMAGE)" ]; then set -- "$$@" --build-arg "BUILDER_IMAGE=$(BUILDER_IMAGE)"; fi; \
+	if [ -n "$(BENCHMARK_REVISION)" ]; then set -- "$$@" --build-arg "BENCHMARK_REVISION=$(BENCHMARK_REVISION)"; fi; \
 	DOCKER_BUILDKIT=1 $(CONTAINER_RUNTIME) build "$$@" \
 		--build-arg "BENCHMARK_DATA_REPOSITORY=$(BENCHMARK_DATA_REPOSITORY)" \
-		--build-arg "BENCHMARK_REVISION=$(BENCHMARK_REVISION)" \
-		--build-arg "BENCHMARK_QUALIFICATION_MODE=$(BENCHMARK_QUALIFICATION_MODE)" \
-		--build-arg "SKIP_MODEL_CATALOG_LOADER_CHECKS=$(SKIP_MODEL_CATALOG_LOADER_CHECKS)" \
+		--build-arg "VALIDATE_RELEASE=$(VALIDATE_RELEASE)" \
 		--build-arg "CATALOG_DATA_REPOSITORY=$(CATALOG_DATA_REPOSITORY)" \
 		--build-arg "CATALOG_REVISION=$(CATALOG_REVISION)" \
 		-t $(DOCKER_FULL_IMAGE_NAME) .
