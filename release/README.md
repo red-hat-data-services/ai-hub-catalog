@@ -57,10 +57,13 @@ RHOAI loader checks. Make defaults the catalog revision to the current Git
 commit and the URL to the upstream catalog repository. Use your fork URL when
 the commit exists only there. The token must read both repositories.
 
-The equivalent direct build is:
+Make automatically adds `--no-cache` when `VALIDATE_RELEASE=true`. Loader
+scripts are build secrets, whose contents do not invalidate cached layers;
+disabling the cache ensures each validated build runs the supplied checks.
+Direct Docker/Podman builds must also use `--no-cache`:
 
 ```sh
-docker build \
+docker build --no-cache \
   --build-arg VALIDATE_RELEASE=true \
   --build-arg BENCHMARK_REVISION=<full-release-approved-benchmark-commit-sha> \
   --build-arg CATALOG_REVISION=<full-catalog-commit-sha> \
@@ -151,7 +154,8 @@ before using a hermetic pipeline. Local checks cover x86_64; validate other
 requested architectures in Konflux.
 
 When enabling release validation, supply `VALIDATE_RELEASE=true`, the catalog
-revision/repository, and both loader secrets as described above. Regenerate
+revision/repository, and both loader secrets as described above, and disable
+the build cache (`--no-cache`) so loader checks execute on every build. Regenerate
 generated `.tekton` files through their owning product-management configuration;
 this change does not edit them. `Dockerfile.konflux` retains its existing
 catalog-only behavior until that pipeline configuration selects `Dockerfile`.

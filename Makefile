@@ -356,9 +356,11 @@ test-release-candidate-output-path-guards:
 
 # No host-side benchmark checkout, report, or staged payload is required.
 # BuildKit/Podman secrets keep Git credentials and loader scripts out of layers.
+# Secret contents do not invalidate cached layers; validated builds must rerun.
 docker-build:
 	@set -eu; \
 	set --; \
+	if [ "$(VALIDATE_RELEASE)" = "true" ]; then set -- "$$@" --no-cache; fi; \
 	if [ -n "$(GITHUB_TOKEN_FILE)" ]; then \
 		set -- "$$@" --secret "id=github_token,src=$(GITHUB_TOKEN_FILE)"; \
 	else \

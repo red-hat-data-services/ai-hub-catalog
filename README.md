@@ -213,6 +213,9 @@ payload against the catalog, and executes the RHOAI 3.4/3.5 loader checks.
 `CATALOG_DATA_REPOSITORY` (the upstream catalog repository by default); set that
 URL to your fork when needed. Loader executables are passed as build secrets
 and their dependencies must be present in the builder image.
+Make automatically uses `--no-cache` for validated builds so changed loader
+scripts always run. Direct Docker/Podman builds must also pass `--no-cache`
+when enabling validation; secret contents do not invalidate cached layers.
 
 GitHub Actions runs an advisory **Release validation** job with
 `VALIDATE_RELEASE=true` and `continue-on-error: true`. Its failures and missing
