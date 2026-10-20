@@ -58,7 +58,7 @@ export PATH
 
 git init --quiet "$scratch/source"
 git -C "$scratch/source" add data api-client
-git -C "$scratch/source" -c core.hooksPath=/dev/null -c user.name=BuildTest -c user.email=build-test@example.invalid commit --quiet -m 'test source'
+git -C "$scratch/source" -c core.hooksPath=/dev/null -c user.name=BuildTest -c user.email=build-test@example.invalid commit --no-gpg-sign --quiet -m 'test source'
 BENCHMARK_REVISION=$(git -C "$scratch/source" rev-parse HEAD)
 BENCHMARK_DATA_REPOSITORY=$scratch/source
 export BENCHMARK_REVISION BENCHMARK_DATA_REPOSITORY
@@ -69,7 +69,7 @@ printf 'producer-only index\n' > "$scratch/context/data/models-index.yaml"
 printf '# Runtime files\nmodels-catalog.yaml\n' > "$scratch/context/release/runtime-catalog-files.txt"
 git init --quiet "$scratch/context"
 git -C "$scratch/context" add data release
-git -C "$scratch/context" -c core.hooksPath=/dev/null -c user.name=BuildTest -c user.email=build-test@example.invalid commit --quiet -m 'test catalog'
+git -C "$scratch/context" -c core.hooksPath=/dev/null -c user.name=BuildTest -c user.email=build-test@example.invalid commit --no-gpg-sign --quiet -m 'test catalog'
 CATALOG_REVISION=$(git -C "$scratch/context" rev-parse HEAD)
 CATALOG_DATA_REPOSITORY=$scratch/context
 export CATALOG_REVISION CATALOG_DATA_REPOSITORY
@@ -121,7 +121,7 @@ test ! -e "$scratch/release"
 
 touch "$scratch/source/qualification-error"
 git -C "$scratch/source" add qualification-error
-git -C "$scratch/source" -c core.hooksPath=/dev/null -c user.name=BuildTest -c user.email=build-test@example.invalid commit --quiet -m 'failing qualification'
+git -C "$scratch/source" -c core.hooksPath=/dev/null -c user.name=BuildTest -c user.email=build-test@example.invalid commit --no-gpg-sign --quiet -m 'failing qualification'
 BENCHMARK_REVISION=$(git -C "$scratch/source" rev-parse HEAD)
 if sh "$script_dir/prepare-image.sh" "$scratch/failed" > "$scratch/error" 2>&1; then
     echo 'default build unexpectedly ignored qualification failure' >&2
