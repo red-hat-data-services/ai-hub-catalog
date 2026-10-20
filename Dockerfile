@@ -4,8 +4,8 @@ ARG BUILDER_IMAGE=registry.access.redhat.com/ubi9/go-toolset@sha256:8648cd4d48e0
 # operating-system contents. This digest is reused from the current downstream
 # benchmark image; productization must approve it for the unified component.
 ARG BASE_IMAGE=registry.redhat.io/ubi9/ubi-minimal-pqc@sha256:8a842ac769de709143e4edeace516f2008dfdc431b64670ad3353fa323b44736
-# Ordinary image builds fetch and package data. CI explicitly enables the
-# release qualifier and supported-version loader checks when requested.
+# Ordinary image builds fetch and test-qualify benchmarks against the catalog.
+# CI explicitly enables release qualification and supported-version loader checks.
 ARG VALIDATE_RELEASE=false
 
 FROM ${BUILDER_IMAGE} AS prepare
@@ -38,7 +38,7 @@ RUN --mount=type=secret,id=github_token \
 
 FROM ${BASE_IMAGE}
 ARG VALIDATE_RELEASE
-# The preceding stage fetches and stages these bytes, optionally validating.
+# The preceding stage fetches and qualifies these bytes for test or release.
 # Git metadata, credentials, reports, and build tools stay out of this image.
 COPY --from=prepare --chown=1001:0 /prepared/app/ /app/
 

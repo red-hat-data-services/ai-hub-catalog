@@ -429,6 +429,6 @@ help:
 	@echo "  setup        - Setup development environment"
 	@echo "  validate-release-candidate - Validate and stage catalog plus qualified benchmark data"
 	@echo "  validate-release-candidate-fixture - Validate the committed non-product CI fixture"
-	@echo "  docker-build - Validate and build the unified product image"
+	@echo "  docker-build - Qualify benchmarks and build the unified data image"
 	@echo "  docker-build-fixture - Build a local image-layout proof with fixture data"
 	@echo "  help         - Show this help"

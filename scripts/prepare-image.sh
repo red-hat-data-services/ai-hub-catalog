@@ -1,7 +1,7 @@
 #!/bin/sh
 # Run inside the Dockerfile's preparation stage, with credentials mounted as
-# secrets. Ordinary builds package the fetched data unchanged. CI can opt into
-# the producer qualifier and consumer validator with VALIDATE_RELEASE=true.
+# secrets. Ordinary builds package the producer's test-qualified handoff. CI can
+# opt into release qualification and consumer validation with VALIDATE_RELEASE=true.
 set -eu
 
 require_revision() {
@@ -17,10 +17,11 @@ require_revision() {
 require_revision BENCHMARK_REVISION "${BENCHMARK_REVISION:-}"
 validate_release=${VALIDATE_RELEASE-false}
 case "$validate_release" in
-    false) ;;
-    true) require_revision CATALOG_REVISION "${CATALOG_REVISION:-}" ;;
+    false) qualification_mode=test ;;
+    true) qualification_mode=release ;;
     *) echo "VALIDATE_RELEASE must be true or false" >&2; exit 2 ;;
 esac
+require_revision CATALOG_REVISION "${CATALOG_REVISION:-}"
 source_root=$(pwd)
 output=${1:-/prepared}
 scratch=$(mktemp -d)
@@ -53,19 +54,8 @@ fetch_commit() {
 fetch_commit "$BENCHMARK_DATA_REPOSITORY" "$BENCHMARK_REVISION" "$scratch/benchmarks"
 printf 'Fetched benchmark commit %s\n' "$BENCHMARK_REVISION"
 
-if [ "$validate_release" = false ]; then
-    mkdir -p "$output/app/data" "$output/app/benchmarks"
-    cp -a "$scratch/benchmarks/data/." "$output/app/benchmarks/"
-    while IFS= read -r file; do
-        case "$file" in ''|\#*) continue ;; esac
-        cp "$source_root/data/$file" "$output/app/data/$file"
-    done < release/runtime-catalog-files.txt
-    echo "Release validation disabled; packaged the fetched benchmark data unchanged"
-    exit 0
-fi
-
 fetch_commit "$CATALOG_DATA_REPOSITORY" "$CATALOG_REVISION" "$scratch/catalog"
-printf 'Fetched catalog commit %s for release validation\n' "$CATALOG_REVISION"
+printf 'Fetched catalog commit %s for benchmark qualification\n' "$CATALOG_REVISION"
 
 # Bind the catalog files in this build context to the committed candidate that
 # the producer qualifies. A stale or unrelated CATALOG_REVISION must fail.
@@ -83,7 +73,18 @@ python3.12 "$scratch/benchmarks/api-client/qualify.py" \
     --benchmark-revision "$BENCHMARK_REVISION" \
     --catalog-revision "$CATALOG_REVISION" \
     --handoff-dir "$scratch/handoff" \
-    --mode release
+    --mode "$qualification_mode"
+
+if [ "$validate_release" = false ]; then
+    mkdir -p "$output/app/data" "$output/app/benchmarks"
+    cp -a "$scratch/handoff/benchmarks/." "$output/app/benchmarks/"
+    while IFS= read -r file; do
+        case "$file" in ''|\#*) continue ;; esac
+        cp "$source_root/data/$file" "$output/app/data/$file"
+    done < release/runtime-catalog-files.txt
+    echo "Packaged test-qualified benchmarks; release validation disabled, not eligible for release promotion"
+    exit 0
+fi
 
 mkdir "$scratch/loader-checks"
 while IFS= read -r version; do

@@ -170,9 +170,10 @@ Generate metadata completeness reports:
 
 ### Building the Container
 
-The Dockerfile fetches `data/` from the private
+The Dockerfile fetches the private
 [`models-perf-benchmark-data`](https://github.com/red-hat-data-services/models-perf-benchmark-data)
-repository during the build and copies it unchanged to `/app/benchmarks`.
+repository during the build, runs its producer qualifier against the selected
+catalog commit, and copies the filtered handoff to `/app/benchmarks`.
 Generated runtime catalogs are copied from this checkout to `/app/data`.
 No local benchmark folder, report, or staged `build/` directory is required.
 
@@ -180,18 +181,25 @@ No local benchmark folder, report, or staged `build/` directory is required.
 make docker-build
 ```
 
-`VALIDATE_RELEASE` defaults to `false`. Normal builds do not run benchmark
-qualification, content compatibility validation, or RHOAI loader checks.
-They still require the expected payload directories and manifest and set
-read-only permissions for arbitrary non-root users. The image label
-`io.openshift.ai.release-validation=false` records that validation did not run.
+`VALIDATE_RELEASE` defaults to `false`. Normal builds run benchmark qualification
+in `test` mode, applying the producer's reviewed `approved-for-testing`
+exclusions. With the pinned benchmark and current catalog, this includes 103
+models and excludes the 28 unmatched models. Qualification failures stop the
+build. Consumer release validation and RHOAI loader checks remain opt-in.
+Builds also check the image layout and set read-only permissions for arbitrary
+non-root users. The image label `io.openshift.ai.release-validation=false`
+records that release validation did not run; the default image is not eligible
+for release promotion.
 
 The benchmark revision defaults to the full commit SHA pinned in `Dockerfile`.
-Set `BENCHMARK_REVISION` to override it with another immutable commit. Default
-builds require no catalog revision or catalog repository access. Make passes
-`GITHUB_TOKEN_FILE`, an exported `GITHUB_TOKEN`, or your existing `gh auth token`
-as a build secret for private benchmark access. The default base requires
-registry.redhat.io credentials; for a local check with the public UBI base:
+Set `BENCHMARK_REVISION` to override it with another immutable commit.
+`CATALOG_REVISION` defaults to the local Git commit and must exist in
+`CATALOG_DATA_REPOSITORY` (the upstream catalog repository by default); set that
+URL to your fork when needed. The runtime catalog files must match that commit.
+Make passes `GITHUB_TOKEN_FILE`, an exported `GITHUB_TOKEN`, or your existing
+`gh auth token` as a build secret. The token must have read access to both
+repositories. The default base requires registry.redhat.io credentials; for a
+local check with the public UBI base:
 
 ```bash
 make docker-build \
@@ -209,10 +217,8 @@ make docker-build \
 
 This path runs the upstream release qualifier, verifies its report and filtered
 payload against the catalog, and executes the RHOAI 3.4/3.5 loader checks.
-`CATALOG_REVISION` defaults to the local Git commit and must exist in
-`CATALOG_DATA_REPOSITORY` (the upstream catalog repository by default); set that
-URL to your fork when needed. Loader executables are passed as build secrets
-and their dependencies must be present in the builder image.
+Loader executables are passed as build secrets, and their dependencies must be
+present in the builder image.
 Make automatically uses `--no-cache` for validated builds so changed loader
 scripts always run. Direct Docker/Podman builds must also pass `--no-cache`
 when enabling validation; secret contents do not invalidate cached layers.
@@ -223,9 +229,8 @@ inputs are reported without failing the workflow. Public fixture CI remains
 available independently. See [`release/README.md`](release/README.md) for CI
 secrets, direct build commands, and the Konflux handoff.
 
-The default image contains the source data as-is; enabling validation can
-produce a filtered benchmark payload. A successful default build does not
-assert Model Catalog compatibility or release approval.
+Both build modes package only the qualified benchmark handoff. Release mode
+requires a release-approved exclusion policy and successful consumer validation.
 
 The image exposes two volume mount points:
 
