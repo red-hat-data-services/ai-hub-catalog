@@ -33,7 +33,8 @@ cat > "$scratch/askpass" <<'ASKPASS'
 #!/bin/sh
 case "$1" in
     *Username*) printf '%s\n' x-access-token ;;
-    *) cat /run/secrets/github_token ;;
+    *) cat /run/secrets/models-perf-benchmark-data-clone/token 2>/dev/null \
+       || cat /run/secrets/github_token ;;
 esac
 ASKPASS
 chmod 700 "$scratch/askpass"

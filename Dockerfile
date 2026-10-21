@@ -34,6 +34,7 @@ ARG VALIDATE_RELEASE
 RUN --mount=type=secret,id=github_token \
     --mount=type=secret,id=rhoai-3.4 \
     --mount=type=secret,id=rhoai-3.5 \
+    --mount=type=secret,id=models-perf-benchmark-data-clone/token \
     sh scripts/prepare-image.sh /prepared
 
 FROM ${BASE_IMAGE}
