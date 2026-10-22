@@ -18,6 +18,12 @@ RELEASE_CANDIDATE_DIR?=build/release-candidate
 FIXTURE_RELEASE_CANDIDATE_DIR?=build/release-candidate-fixture
 RUNTIME_CATALOG_FILES?=release/runtime-catalog-files.txt
 BENCHMARK_DATA_DIR?=
+BENCHMARK_DATA_REPOSITORY?=https://github.com/red-hat-data-services/models-perf-benchmark-data.git
+BENCHMARK_REVISION?=
+VALIDATE_RELEASE?=false
+CATALOG_DATA_REPOSITORY?=https://github.com/red-hat-data-services/ai-hub-catalog.git
+CATALOG_REVISION?=$(shell git rev-parse HEAD)
+GITHUB_TOKEN_FILE?=
 BENCHMARK_QUALIFICATION_REPORT?=
 MODEL_CATALOG_LOADER_CHECK_DIR?=
 FIXTURE_BENCHMARK_DATA_DIR=internal/releasecandidate/testdata/benchmarks
@@ -219,7 +225,7 @@ run-with-report: run report
 dev: fmt vet test build
 
 # Full CI pipeline
-ci: deps check test test-release-candidate-output-path-guards validate-release-candidate-fixture build
+ci: deps check test test-image-preparation test-release-candidate-output-path-guards validate-release-candidate-fixture build
 
 # Create release build
 release: clean
@@ -259,9 +265,12 @@ setup:
 
 # Docker targets
 
-# Validate every input and stage the exact bytes consumed by the unified Dockerfile.
-# Product use requires the qualified private payload and one loader executable
-# per supported Model Catalog version.
+.PHONY: test-image-preparation
+test-image-preparation:
+	sh scripts/test-prepare-image.sh
+
+# Standalone validation of an already qualified payload. Docker builds opt into
+# qualification and this validator with VALIDATE_RELEASE=true.
 validate-release-candidate: validate-product-release-candidate-output-path
 	@if [ -z "$(BENCHMARK_DATA_DIR)" ]; then \
 		echo "BENCHMARK_DATA_DIR must point to a qualified benchmark payload"; \
@@ -299,12 +308,12 @@ validate-release-candidate-fixture: validate-fixture-release-candidate-output-pa
 		--supported-version-list "$(FIXTURE_SUPPORTED_VERSIONS)" \
 		--fixture-only
 
-# Docker only admits these two staging paths through .dockerignore. Reject Make
-# overrides before validation so a successful staging run cannot later fail at
-# COPY time. The release-candidate CLI itself intentionally remains configurable.
+# Keep the standalone validation output stable. The fixture output must match
+# its .dockerignore exception. The CLI itself remains configurable; product
+# Docker builds stage their payload inside the builder instead.
 validate-product-release-candidate-output-path:
 	@if [ "$(RELEASE_CANDIDATE_DIR)" != "build/release-candidate" ]; then \
-		echo "RELEASE_CANDIDATE_DIR must be exactly build/release-candidate for Make/Docker builds" >&2; \
+		echo "RELEASE_CANDIDATE_DIR must be exactly build/release-candidate for Make validation" >&2; \
 		exit 2; \
 	fi
 
@@ -345,23 +354,44 @@ test-release-candidate-output-path-guards:
 	rm "$$product_log" "$$fixture_log"; \
 	rmdir "$$tmp_root"
 
-# Build a product candidate only after the blocking validation succeeds.
-docker-build: validate-release-candidate
-	@if [ "$(CONTAINER_RUNTIME)" = "podman" ]; then \
-		podman build --build-arg RELEASE_CANDIDATE_DIR="$(RELEASE_CANDIDATE_DIR)" -t $(DOCKER_FULL_IMAGE_NAME) .; \
-	elif [ -f ~/.docker/config.json ]; then \
-		DOCKER_BUILDKIT=1 $(CONTAINER_RUNTIME) build \
-			--secret id=dockerconfig,src=$$HOME/.docker/config.json \
-			--build-arg BUILDKIT_INLINE_CACHE=1 \
-			--build-arg RELEASE_CANDIDATE_DIR="$(RELEASE_CANDIDATE_DIR)" \
-			-t $(DOCKER_FULL_IMAGE_NAME) .; \
+# No host-side benchmark checkout, report, or staged payload is required.
+# BuildKit/Podman secrets keep Git credentials and loader scripts out of layers.
+# Secret contents do not invalidate cached layers; validated builds must rerun.
+docker-build:
+	@set -eu; \
+	set --; \
+	if [ "$(VALIDATE_RELEASE)" = "true" ]; then set -- "$$@" --no-cache; fi; \
+	if [ -n "$(GITHUB_TOKEN_FILE)" ]; then \
+		set -- "$$@" --secret "id=github_token,src=$(GITHUB_TOKEN_FILE)"; \
 	else \
-		$(CONTAINER_RUNTIME) build --build-arg RELEASE_CANDIDATE_DIR="$(RELEASE_CANDIDATE_DIR)" -t $(DOCKER_FULL_IMAGE_NAME) .; \
-	fi
+		if [ -z "$${GITHUB_TOKEN:-}" ] && command -v gh >/dev/null 2>&1; then \
+			GITHUB_TOKEN="$$(gh auth token)"; \
+		fi; \
+		if [ -n "$${GITHUB_TOKEN:-}" ]; then \
+			export GITHUB_TOKEN; \
+			set -- "$$@" --secret id=github_token,env=GITHUB_TOKEN; \
+		fi; \
+	fi; \
+	if [ "$(VALIDATE_RELEASE)" = "true" ] && [ -n "$(MODEL_CATALOG_LOADER_CHECK_DIR)" ]; then \
+		while IFS= read -r version; do \
+			case "$$version" in ''|\#*) continue ;; esac; \
+			set -- "$$@" --secret "id=$$version,src=$(MODEL_CATALOG_LOADER_CHECK_DIR)/$$version"; \
+		done < release/supported-model-catalog-versions.txt; \
+	fi; \
+	if [ -n "$(BASE_IMAGE)" ]; then set -- "$$@" --build-arg "BASE_IMAGE=$(BASE_IMAGE)"; fi; \
+	if [ -n "$(BUILDER_IMAGE)" ]; then set -- "$$@" --build-arg "BUILDER_IMAGE=$(BUILDER_IMAGE)"; fi; \
+	if [ -n "$(BENCHMARK_REVISION)" ]; then set -- "$$@" --build-arg "BENCHMARK_REVISION=$(BENCHMARK_REVISION)"; fi; \
+	DOCKER_BUILDKIT=1 $(CONTAINER_RUNTIME) build "$$@" \
+		--build-arg "BENCHMARK_DATA_REPOSITORY=$(BENCHMARK_DATA_REPOSITORY)" \
+		--build-arg "VALIDATE_RELEASE=$(VALIDATE_RELEASE)" \
+		--build-arg "CATALOG_DATA_REPOSITORY=$(CATALOG_DATA_REPOSITORY)" \
+		--build-arg "CATALOG_REVISION=$(CATALOG_REVISION)" \
+		-t $(DOCKER_FULL_IMAGE_NAME) .
 
 # Local/CI image-layout proof using only the committed non-product fixture.
 docker-build-fixture: validate-release-candidate-fixture
 	$(CONTAINER_RUNTIME) build \
+		-f Dockerfile.fixture \
 		--build-arg RELEASE_CANDIDATE_DIR="$(FIXTURE_RELEASE_CANDIDATE_DIR)" \
 		-t $(DOCKER_FULL_IMAGE_NAME)-fixture .
 	
@@ -399,6 +429,6 @@ help:
 	@echo "  setup        - Setup development environment"
 	@echo "  validate-release-candidate - Validate and stage catalog plus qualified benchmark data"
 	@echo "  validate-release-candidate-fixture - Validate the committed non-product CI fixture"
-	@echo "  docker-build - Validate and build the unified product image"
+	@echo "  docker-build - Qualify benchmarks and build the unified data image"
 	@echo "  docker-build-fixture - Build a local image-layout proof with fixture data"
 	@echo "  help         - Show this help"

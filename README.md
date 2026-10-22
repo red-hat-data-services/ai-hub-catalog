@@ -170,53 +170,72 @@ Generate metadata completeness reports:
 
 ### Building the Container
 
-The runtime image uses a digest-pinned UBI candidate base and contains one
-validated release candidate: generated runtime catalogs under `/app/data` and
-the qualified private benchmark handoff under `/app/benchmarks`. Productization
-must approve the reused downstream benchmark base for this unified component.
-Catalog indexes, producer inputs, reports, credentials, and `sample-data` are
-never packaged.
+The Dockerfile fetches the private
+[`models-perf-benchmark-data`](https://github.com/red-hat-data-services/models-perf-benchmark-data)
+repository during the build, runs its producer qualifier against the selected
+catalog commit, and copies the filtered handoff to `/app/benchmarks`.
+Generated runtime catalogs are copied from this checkout to `/app/data`.
+No local benchmark folder, report, or staged `build/` directory is required.
 
 ```bash
-make validate-release-candidate \
-  BENCHMARK_DATA_DIR=/path/to/qualified/benchmark/data \
-  BENCHMARK_QUALIFICATION_REPORT=/path/to/benchmark-qualification-report.json \
-  MODEL_CATALOG_LOADER_CHECK_DIR=/path/to/supported-version-checks
+make docker-build
+```
 
+`VALIDATE_RELEASE` defaults to `false`. Normal builds run benchmark qualification
+in `test` mode, applying the producer's reviewed `approved-for-testing`
+exclusions. With the pinned benchmark and current catalog, this includes 103
+models and excludes the 28 unmatched models. Qualification failures stop the
+build. Consumer release validation and RHOAI loader checks remain opt-in.
+Builds also check the image layout and set read-only permissions for arbitrary
+non-root users. The image label `io.openshift.ai.release-validation=false`
+records that release validation did not run; the default image is not eligible
+for release promotion.
+
+The benchmark revision defaults to the full commit SHA pinned in `Dockerfile`.
+Set `BENCHMARK_REVISION` to override it with another immutable commit.
+`CATALOG_REVISION` defaults to the local Git commit and must exist in
+`CATALOG_DATA_REPOSITORY` (the upstream catalog repository by default); set that
+URL to your fork when needed. The runtime catalog files must match that commit.
+Make passes `GITHUB_TOKEN_FILE`, an exported `GITHUB_TOKEN`, or your existing
+`gh auth token` as a build secret. The token must have read access to both
+repositories. The default base requires registry.redhat.io credentials; for a
+local check with the public UBI base:
+
+```bash
 make docker-build \
-  BENCHMARK_DATA_DIR=/path/to/qualified/benchmark/data \
-  BENCHMARK_QUALIFICATION_REPORT=/path/to/benchmark-qualification-report.json \
+  BASE_IMAGE=registry.access.redhat.com/ubi9/ubi-minimal@sha256:a21d19f72557aa893a0f6ca1177bb1ffd91df6015e60470a116c50a6a05efcd9
+```
+
+To enable all release checks explicitly:
+
+```bash
+make docker-build \
+  VALIDATE_RELEASE=true \
+  BENCHMARK_REVISION=<full-release-approved-benchmark-commit-sha> \
   MODEL_CATALOG_LOADER_CHECK_DIR=/path/to/supported-version-checks
 ```
 
-The first command is the blocking release gate and stages the exact image bytes
-under `build/release-candidate`. See [`release/README.md`](release/README.md)
-for the handoff and validation contract. `make validate-release-candidate-fixture`
-is a non-product CI proof only.
+This path runs the upstream release qualifier, verifies its report and filtered
+payload against the catalog, and executes the RHOAI 3.4/3.5 loader checks.
+Loader executables are passed as build secrets, and their dependencies must be
+present in the builder image.
+Make automatically uses `--no-cache` for validated builds so changed loader
+scripts always run. Direct Docker/Podman builds must also pass `--no-cache`
+when enabling validation; secret contents do not invalidate cached layers.
 
-The Make/Docker flow uses fixed staging directories:
-`build/release-candidate` for product inputs and
-`build/release-candidate-fixture` for the committed fixture. Overriding
-`RELEASE_CANDIDATE_DIR` or `FIXTURE_RELEASE_CANDIDATE_DIR` is rejected before
-validation because `.dockerignore` exposes only those directories to the image
-build. Standalone callers may still invoke `go run ./cmd/release-candidate`
-with an arbitrary `--output-dir`; that output is not automatically a Docker
-build context.
+GitHub Actions runs an advisory **Release validation** job with
+`VALIDATE_RELEASE=true` and `continue-on-error: true`. Its failures and missing
+inputs are reported without failing the workflow. Public fixture CI remains
+available independently. See [`release/README.md`](release/README.md) for CI
+secrets, direct build commands, and the Konflux handoff.
 
-The dual-payload loader matrix covers RHOAI 3.4 and 3.5. RHOAI 2.25 remains a
-catalog-only consumer because its Model Catalog implementation has no benchmark
-loader; the release gate still validates that the unified image contains a
-qualified benchmark payload compatible with its catalog data.
-
-The regular `Dockerfile` exercises the unified contract. `Dockerfile.konflux`
-keeps its current catalog-only behavior until RHOAIENG-97416 can switch the
-product pipeline atomically without breaking today's pull-request and push
-builds.
+Both build modes package only the qualified benchmark handoff. Release mode
+requires a release-approved exclusion policy and successful consumer validation.
 
 The image exposes two volume mount points:
 
-- `/app/data` — contains only supported generated runtime catalogs
-- `/app/benchmarks` — contains only the qualified benchmark payload
+- `/app/data` — generated runtime catalogs
+- `/app/benchmarks` — benchmark data
 
 ### Container Usage Examples
 
@@ -240,10 +259,7 @@ docker rm -f catalog
 ```bash
 # Build with custom image name and tag
 DOCKER_IMAGE_NAME=my-model-catalog DOCKER_IMAGE_TAG=v1.0 \
-  make docker-build \
-  BENCHMARK_DATA_DIR=/path/to/qualified/benchmark/data \
-  BENCHMARK_QUALIFICATION_REPORT=/path/to/benchmark-qualification-report.json \
-  MODEL_CATALOG_LOADER_CHECK_DIR=/path/to/supported-version-checks
+  make docker-build
 
 # View image details after build
 docker images model-metadata-collection

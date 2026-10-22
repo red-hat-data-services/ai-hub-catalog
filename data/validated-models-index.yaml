@@ -357,3 +357,9 @@ models:
   uri: registry.redhat.io/rhai/modelcar-redhatai-gemma-4-31b-it:3.0
   labels:
   - validated
+- type: oci
+  uri: registry.redhat.io/rhai/modelcar-redhatai-gemma-4-31b:3.0
+  hf_model: RedHatAI/gemma-4-31B
+  name: RedHatAI/gemma-4-31B
+  labels:
+  - validated

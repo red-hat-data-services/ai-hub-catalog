@@ -15,6 +15,7 @@ import (
 	"path"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -27,6 +28,8 @@ type Config struct {
 	ProducerInputDir             string
 	BenchmarkDir                 string
 	BenchmarkQualificationReport string
+	BenchmarkQualificationMode   string
+	SkipLoaderChecks             bool
 	RuntimeFileList              string
 	OutputDir                    string
 	LoaderCheckDir               string
@@ -231,6 +234,18 @@ func ValidateAndStage(cfg Config) (Report, error) {
 
 func normalizeConfig(cfg Config) (Config, error) {
 	var err error
+	if cfg.BenchmarkQualificationMode == "" {
+		cfg.BenchmarkQualificationMode = "release"
+	}
+	if cfg.BenchmarkQualificationMode != "release" && cfg.BenchmarkQualificationMode != "test" {
+		return cfg, fmt.Errorf("benchmark qualification mode must be release or test")
+	}
+	if cfg.FixtureOnly && cfg.BenchmarkQualificationMode != "release" {
+		return cfg, fmt.Errorf("fixture-only validation cannot be combined with benchmark qualification mode test")
+	}
+	if cfg.SkipLoaderChecks && cfg.BenchmarkQualificationMode != "test" {
+		return cfg, fmt.Errorf("skipping loader checks requires benchmark qualification mode test")
+	}
 	if cfg.CatalogDir, err = resolveExistingDirectory("catalog", cfg.CatalogDir); err != nil {
 		return cfg, err
 	}
@@ -246,8 +261,12 @@ func normalizeConfig(cfg Config) (Config, error) {
 	if cfg.RuntimeFileList, err = resolveExistingRegularFile("runtime catalog list", cfg.RuntimeFileList); err != nil {
 		return cfg, err
 	}
-	if cfg.LoaderCheckDir, err = resolveExistingDirectory("Model Catalog loader check", cfg.LoaderCheckDir); err != nil {
-		return cfg, err
+	if cfg.SkipLoaderChecks {
+		cfg.LoaderCheckDir = ""
+	} else {
+		if cfg.LoaderCheckDir, err = resolveExistingDirectory("Model Catalog loader check", cfg.LoaderCheckDir); err != nil {
+			return cfg, err
+		}
 	}
 	if cfg.SupportedVersionList, err = resolveExistingRegularFile("supported Model Catalog version list", cfg.SupportedVersionList); err != nil {
 		return cfg, err
@@ -269,6 +288,9 @@ func normalizeConfig(cfg Config) (Config, error) {
 		{"supported Model Catalog version list", cfg.SupportedVersionList},
 	}
 	for _, input := range inputs {
+		if input.path == "" {
+			continue
+		}
 		if pathsOverlap(cfg.OutputDir, input.path) {
 			return cfg, fmt.Errorf("release-candidate output %s overlaps %s %s", cfg.OutputDir, input.name, input.path)
 		}
@@ -1055,11 +1077,12 @@ func validateQualificationReport(cfg Config, benchmark benchmarkValidation, cata
 		problems.add("benchmark qualification report match_policy %q must be %q", report.MatchPolicy, benchmarkMatchPolicy)
 	}
 	if !cfg.FixtureOnly {
-		if report.QualificationMode != "release" {
-			problems.add("benchmark qualification report qualification_mode %q must be %q", report.QualificationMode, "release")
+		if report.QualificationMode != cfg.BenchmarkQualificationMode {
+			problems.add("benchmark qualification report qualification_mode %q must be %q", report.QualificationMode, cfg.BenchmarkQualificationMode)
 		}
-		if !report.PromotionEligible {
-			problems.add("benchmark qualification report promotion_eligible must be true")
+		expectedPromotionEligible := cfg.BenchmarkQualificationMode == "release"
+		if report.PromotionEligible != expectedPromotionEligible {
+			problems.add("benchmark qualification report promotion_eligible must be %t", expectedPromotionEligible)
 		}
 	}
 	for label, revision := range map[string]string{
@@ -1078,6 +1101,9 @@ func validateQualificationReport(cfg Config, benchmark benchmarkValidation, cata
 	}
 
 	expectedReviewStatus := "approved"
+	if cfg.BenchmarkQualificationMode == "test" {
+		expectedReviewStatus = "approved-for-testing"
+	}
 	if cfg.FixtureOnly {
 		expectedReviewStatus = "fixture"
 	}
@@ -1153,7 +1179,12 @@ func digestPayload(payload map[string][]byte) string {
 	for name := range payload {
 		names = append(names, name)
 	}
-	sort.Strings(names)
+	// The producer sorts pathlib.Path objects, which compare path components.
+	// Whole-string sorting would put a/model-extra before a/model/file and
+	// produce a different digest for the same payload.
+	slices.SortFunc(names, func(left, right string) int {
+		return slices.Compare(strings.Split(left, "/"), strings.Split(right, "/"))
+	})
 	for _, name := range names {
 		_, _ = digest.Write([]byte(name))
 		_, _ = digest.Write([]byte{0})
@@ -1606,8 +1637,10 @@ func stageAndVerifyPayload(cfg Config, payload validatedPayload) (returnErr erro
 	}
 	loaderCfg := cfg
 	loaderCfg.OutputDir = staging
-	if err := runLoaderChecks(loaderCfg); err != nil {
-		return err
+	if !cfg.SkipLoaderChecks {
+		if err := runLoaderChecks(loaderCfg); err != nil {
+			return err
+		}
 	}
 	if err := validateStagedTree(staging); err != nil {
 		return fmt.Errorf("loader checks left an invalid staged tree: %w", err)

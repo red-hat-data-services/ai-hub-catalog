@@ -46,6 +46,8 @@ models:
   hf_model: google/gemma-4-31b
 - type: oci
   uri: registry.redhat.io/rhai/modelcar-allenai-molmo2-4b:3.0
+  hf_model: allenai/Molmo2-4B
+  name: Molmo2-4B
 - type: oci
   uri: registry.redhat.io/rhai/modelcar-allenai-olmocr-2-7b-1025-fp8:3.0
 - type: oci
@@ -92,3 +94,6 @@ models:
 - type: oci
   uri: registry.redhat.io/rhai/modelcar-redhatai-qwen2-5-1-5b-quantized-w8a8:3.0
   hf_model: RedHatAI/Qwen2.5-1.5B-quantized.w8a8
+- type: oci
+  uri: registry.redhat.io/rhai/modelcar-redhatai-molmo2-4b:3.0
+  hf_model: RedHatAI/Molmo2-4B
