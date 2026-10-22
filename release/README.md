@@ -5,6 +5,23 @@ data at `/app/benchmarks`. Only catalogs listed in `runtime-catalog-files.txt`
 are shipped. Catalog indexes, `input/`, credentials, reports, Git metadata,
 and build tools stay outside the runtime image.
 
+## Required serving-runtime catalog
+
+RHOAI 3.6 configures the serving-runtime source at
+`/app/data/redhat-serving-runtimes-catalog.yaml`. Every build requires this file
+and the other consumer catalogs independently of the packaging allowlist, so
+removing a catalog from both the list and `data/` fails before packaging.
+The preparation stage also regenerates the serving-runtime catalog in memory,
+checks it against the committed bytes, and validates its pinned model-registry
+API schemas. These offline checks run even when `VALIDATE_RELEASE=false`.
+They verify content and source references; a real versioned consumer check
+remains necessary for release qualification.
+
+Run `make check-serving-runtimes` to perform these checks locally. See
+[`input/serving_runtimes/README.md`](../input/serving_runtimes/README.md) for
+provenance and the offline update workflow. Only the generated catalog ships;
+the index, runtime inputs, schemas, and generator stay in the build stage.
+
 ## Default build
 
 `Dockerfile` defaults to `VALIDATE_RELEASE=false`. It fetches the private
@@ -84,6 +101,7 @@ docker build --no-cache \
   --secret id=github_token,env=GITHUB_TOKEN \
   --secret id=rhoai-3.4,src=/path/to/supported-version-checks/rhoai-3.4 \
   --secret id=rhoai-3.5,src=/path/to/supported-version-checks/rhoai-3.5 \
+  --secret id=rhoai-3.6,src=/path/to/supported-version-checks/rhoai-3.6 \
   -t ai-hub-catalog:validated .
 ```
 
@@ -95,13 +113,16 @@ switch nor advisory CI grants release approval.
 Both modes package the producer's qualified handoff, including its regenerated
 manifest. Neither mode copies the unfiltered benchmark source into the image.
 
-The two loader executables are named `rhoai-3.4` and `rhoai-3.5`. Each must use
+The loader executables are named `rhoai-3.4`, `rhoai-3.5`, and `rhoai-3.6`. Each must use
 the matching Model Catalog consumer, load both payloads, assert their records,
 and print `MODEL_CATALOG_LOADER_CHECK_OK=<version>` only after success. They
 receive `MODEL_CATALOG_VERSION`, `RELEASE_CANDIDATE_ROOT`, `CATALOG_DATA_DIR`,
 and `BENCHMARK_DATA_DIR`. Their dependencies must exist in the preparation
 image; `BUILDER_IMAGE` can select a reviewed builder with the required tooling.
-The repository does not provide these product-version runners.
+The RHOAI 3.6 runner must also load the serving-runtime catalog and assert its
+runtime and version records. A runner that only loads model metadata cannot
+prove this requirement. The repository does not provide these product-version
+runners; fixture checks are not substitutes for them.
 
 Consumer validation verifies syntax, identities, references, catalog/benchmark
 compatibility, report hashes and model membership, manifests, safe paths,
@@ -139,6 +160,7 @@ Configure these repository secrets to run it:
 | `BENCHMARK_GITHUB_TOKEN` | Token with read access to the benchmark and selected catalog repositories |
 | `RHOAI_3_4_LOADER_CHECK` | Contents of the reviewed RHOAI 3.4 executable script |
 | `RHOAI_3_5_LOADER_CHECK` | Contents of the reviewed RHOAI 3.5 executable script |
+| `RHOAI_3_6_LOADER_CHECK` | Contents of the reviewed RHOAI 3.6 executable script, including serving-runtime loading |
 
 Optional repository variables are `BENCHMARK_REVISION` (otherwise use the
 Dockerfile pin) and `RELEASE_VALIDATION_BUILDER_IMAGE` (builder with loader
@@ -167,8 +189,14 @@ before using a hermetic pipeline. Local checks cover x86_64; validate other
 requested architectures in Konflux.
 
 When enabling release validation, supply `VALIDATE_RELEASE=true`, the catalog
-revision/repository, and both loader secrets as described above, and disable
+revision/repository, a release-approved benchmark revision, and all three loader
+secrets as described above, and disable
 the build cache (`--no-cache`) so loader checks execute on every build. Regenerate
 generated `.tekton` files through their owning product-management configuration;
-this change does not edit them. `Dockerfile.konflux` retains its existing
+this change does not edit them. The current generated pipelines still use
+`VALIDATE_RELEASE=false`: they now enforce the required catalog and offline
+serving-runtime checks through `Dockerfile`, but do not prove RHOAI 3.6 consumer
+loading or release eligibility. Before enabling the release gate, provision the
+three runner secrets and dependencies, configure secret mounts and cache
+invalidation in the owning PMT pipeline, and select release-approved benchmarks. `Dockerfile.konflux` retains its existing
 catalog-only behavior until that pipeline configuration selects `Dockerfile`.

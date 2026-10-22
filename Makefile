@@ -213,6 +213,15 @@ process-agents: build
 # Process all model indexes, MCP server catalogs, and agent catalogs
 process: process-models process-redhat-mcp process-partner-mcp process-community-mcp process-agents
 
+# Offline regeneration and validation of reviewed serving-runtime inputs.
+.PHONY: process-serving-runtimes check-serving-runtimes
+process-serving-runtimes:
+	$(GOCMD) run ./cmd/serving-runtime-catalog
+
+check-serving-runtimes:
+	sh scripts/check-runtime-catalogs.sh
+	$(GOCMD) run ./cmd/serving-runtime-catalog --check
+
 # Generate metadata completeness report
 report: build-report
 	@echo "Generating metadata report..."
@@ -225,7 +234,7 @@ run-with-report: run report
 dev: fmt vet test build
 
 # Full CI pipeline
-ci: deps check test test-image-preparation test-release-candidate-output-path-guards validate-release-candidate-fixture build
+ci: deps check check-serving-runtimes test test-image-preparation test-release-candidate-output-path-guards validate-release-candidate-fixture build
 
 # Create release build
 release: clean
@@ -271,7 +280,7 @@ test-image-preparation:
 
 # Standalone validation of an already qualified payload. Docker builds opt into
 # qualification and this validator with VALIDATE_RELEASE=true.
-validate-release-candidate: validate-product-release-candidate-output-path
+validate-release-candidate: validate-product-release-candidate-output-path check-serving-runtimes
 	@if [ -z "$(BENCHMARK_DATA_DIR)" ]; then \
 		echo "BENCHMARK_DATA_DIR must point to a qualified benchmark payload"; \
 		exit 2; \
@@ -296,7 +305,7 @@ validate-release-candidate: validate-product-release-candidate-output-path
 
 # Fixture-only proof for CI. This path cannot be used by the default product
 # Docker build and contains no private benchmark data.
-validate-release-candidate-fixture: validate-fixture-release-candidate-output-path
+validate-release-candidate-fixture: validate-fixture-release-candidate-output-path check-serving-runtimes
 	$(GOCMD) run ./cmd/release-candidate \
 		--catalog-dir data \
 		--producer-input-dir input \
@@ -419,6 +428,8 @@ help:
 	@echo "  process-redhat-mcp      - Process Red Hat MCP servers catalog"
 	@echo "  process-partner-mcp     - Process Partner MCP servers catalog"
 	@echo "  process-community-mcp   - Process Community MCP servers catalog"
+	@echo "  process-serving-runtimes - Regenerate the serving-runtime catalog from reviewed inputs"
+	@echo "  check-serving-runtimes - Validate required catalogs, runtime schemas, and generated output"
 	@echo "  report       - Generate metadata completeness report"
 	@echo "  run-with-report - Run extraction then generate report"
 	@echo "  dev          - Quick development iteration"

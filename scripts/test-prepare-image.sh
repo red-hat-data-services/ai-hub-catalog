@@ -66,7 +66,13 @@ unset VALIDATE_RELEASE
 
 printf 'models: []\n' > "$scratch/context/data/models-catalog.yaml"
 printf 'producer-only index\n' > "$scratch/context/data/models-index.yaml"
-printf '# Runtime files\nmodels-catalog.yaml\n' > "$scratch/context/release/runtime-catalog-files.txt"
+cp "$script_dir/../release/runtime-catalog-files.txt" "$scratch/context/release/runtime-catalog-files.txt"
+while IFS= read -r file; do
+    case "$file" in ''|\#*) continue ;; esac
+    printf 'source: fixture\n' > "$scratch/context/data/$file"
+done < "$scratch/context/release/runtime-catalog-files.txt"
+cp "$script_dir/../data/redhat-serving-runtimes-catalog.yaml" "$scratch/context/data/"
+printf 'producer-only runtime index\n' > "$scratch/context/data/redhat-serving-runtimes-index.yaml"
 git init --quiet "$scratch/context"
 git -C "$scratch/context" add data release
 git -C "$scratch/context" -c core.hooksPath=/dev/null -c user.name=BuildTest -c user.email=build-test@example.invalid commit --no-gpg-sign --quiet -m 'test catalog'
@@ -86,10 +92,38 @@ with open(sys.argv[1]) as manifest:
     assert set(json.load(manifest)["files"]) == {"example/model/metadata.json"}
 MANIFEST
 cmp data/models-catalog.yaml "$scratch/default/app/data/models-catalog.yaml"
+cmp data/redhat-serving-runtimes-catalog.yaml "$scratch/default/app/data/redhat-serving-runtimes-catalog.yaml"
+test ! -e "$scratch/default/app/data/redhat-serving-runtimes-index.yaml"
 test ! -e "$scratch/default/app/data/models-index.yaml"
 test ! -e "$scratch/default/app/benchmarks/.git"
 test ! -e "$scratch/default/app/benchmarks/qualification-report.json"
 test ! -e "$scratch/default/qualification-report.json"
+
+# Required consumer files cannot be omitted by editing the allowlist, deleting
+# the file, or doing both. Both modes fail before staging any payload.
+for validate in false true; do
+    for failure in allowlist missing empty both; do
+        git show HEAD:release/runtime-catalog-files.txt > release/runtime-catalog-files.txt
+        git show HEAD:data/redhat-serving-runtimes-catalog.yaml > data/redhat-serving-runtimes-catalog.yaml
+        case "$failure" in
+            allowlist|both)
+                sed '/^redhat-serving-runtimes-catalog.yaml$/d' release/runtime-catalog-files.txt > "$scratch/list"
+                cp "$scratch/list" release/runtime-catalog-files.txt ;;
+        esac
+        case "$failure" in
+            missing|both) rm data/redhat-serving-runtimes-catalog.yaml ;;
+            empty) : > data/redhat-serving-runtimes-catalog.yaml ;;
+        esac
+        if VALIDATE_RELEASE=$validate sh "$script_dir/prepare-image.sh" "$scratch/omitted" > "$scratch/error" 2>&1; then
+            echo "preparation accepted required catalog failure: $failure ($validate)" >&2
+            exit 1
+        fi
+        grep -F 'redhat-serving-runtimes-catalog.yaml' "$scratch/error"
+        test ! -e "$scratch/omitted"
+    done
+done
+git show HEAD:release/runtime-catalog-files.txt > release/runtime-catalog-files.txt
+git show HEAD:data/redhat-serving-runtimes-catalog.yaml > data/redhat-serving-runtimes-catalog.yaml
 
 # Both modes must qualify against immutable catalog bytes.
 for validate in false true; do
