@@ -5,6 +5,7 @@ FROM ${BASE_IMAGE}
 ARG RELEASE_CANDIDATE_DIR=build/release-candidate-fixture
 COPY --chown=1001:0 ${RELEASE_CANDIDATE_DIR}/app/ /app/
 RUN test -d /app/data && \
+    test -s /app/data/redhat-serving-runtimes-catalog.yaml && \
     test -s /app/benchmarks/manifest.json && \
     /bin/sh -c 'for file in /app/data/*; do \
       test -f "${file}" || exit 1; \

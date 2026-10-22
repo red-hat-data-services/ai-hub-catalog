@@ -46,6 +46,9 @@ jobs:
         with:
           go-version-file: go.mod
 
+      - name: Validate required catalogs and serving-runtime inputs
+        run: make check-serving-runtimes
+
       - name: Run tests
         run: make test
 

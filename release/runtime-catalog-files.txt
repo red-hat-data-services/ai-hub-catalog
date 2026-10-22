@@ -7,3 +7,4 @@ redhat-mcp-servers-catalog.yaml
 partner-mcp-servers-catalog.yaml
 community-mcp-servers-catalog.yaml
 redhat-agents-catalog.yaml
+redhat-serving-runtimes-catalog.yaml

@@ -23,6 +23,8 @@ case "$validate_release" in
 esac
 require_revision CATALOG_REVISION "${CATALOG_REVISION:-}"
 source_root=$(pwd)
+script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+sh "$script_dir/check-runtime-catalogs.sh" "$source_root/data" "$source_root/release/runtime-catalog-files.txt"
 output=${1:-/prepared}
 scratch=$(mktemp -d)
 trap 'rm -rf "$scratch"' EXIT HUP INT TERM
