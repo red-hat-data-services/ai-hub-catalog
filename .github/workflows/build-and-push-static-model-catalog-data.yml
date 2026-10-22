@@ -9,10 +9,16 @@ on:
       - 'input/**'
       - 'release/**'
       - 'cmd/release-candidate/**'
+      - 'cmd/serving-runtime-catalog/**'
+      - 'internal/servingruntime/**'
+      - 'pkg/types/**'
+      - 'go.mod'
+      - 'go.sum'
       - 'internal/releasecandidate/**'
       - 'Dockerfile'
       - 'Dockerfile.fixture'
       - 'scripts/prepare-image.sh'
+      - 'scripts/check-runtime-catalogs.sh'
       - 'scripts/test-prepare-image.sh'
       - 'Dockerfile.konflux'
       - '.dockerignore'
@@ -26,10 +32,16 @@ on:
       - 'input/**'
       - 'release/**'
       - 'cmd/release-candidate/**'
+      - 'cmd/serving-runtime-catalog/**'
+      - 'internal/servingruntime/**'
+      - 'pkg/types/**'
+      - 'go.mod'
+      - 'go.sum'
       - 'internal/releasecandidate/**'
       - 'Dockerfile'
       - 'Dockerfile.fixture'
       - 'scripts/prepare-image.sh'
+      - 'scripts/check-runtime-catalogs.sh'
       - 'scripts/test-prepare-image.sh'
       - 'Dockerfile.konflux'
       - '.dockerignore'
@@ -89,6 +101,9 @@ jobs:
           docker run --rm --user 1001230000 --entrypoint /bin/sh unified-model-catalog-data:fixture -c '
             test -r /app/data/models-catalog.yaml &&
             test -r /app/data/validated-models-catalog.yaml &&
+            test -s /app/data/redhat-serving-runtimes-catalog.yaml &&
+            test -r /app/data/redhat-serving-runtimes-catalog.yaml &&
+            test ! -e /app/data/redhat-serving-runtimes-index.yaml &&
             test ! -e /app/data/validated-models-index.yaml &&
             test -r /app/benchmarks/manifest.json &&
             test -r /app/benchmarks/RedHatAI/Apertus-8B-Instruct-2509-FP8-dynamic/metadata.json
@@ -123,11 +138,13 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.BENCHMARK_GITHUB_TOKEN }}
           LOADER_RHOAI_3_4: ${{ secrets.RHOAI_3_4_LOADER_CHECK }}
           LOADER_RHOAI_3_5: ${{ secrets.RHOAI_3_5_LOADER_CHECK }}
+          LOADER_RHOAI_3_6: ${{ secrets.RHOAI_3_6_LOADER_CHECK }}
         run: |
           missing=()
           [ -n "$GITHUB_TOKEN" ] || missing+=(BENCHMARK_GITHUB_TOKEN)
           [ -n "$LOADER_RHOAI_3_4" ] || missing+=(RHOAI_3_4_LOADER_CHECK)
           [ -n "$LOADER_RHOAI_3_5" ] || missing+=(RHOAI_3_5_LOADER_CHECK)
+          [ -n "$LOADER_RHOAI_3_6" ] || missing+=(RHOAI_3_6_LOADER_CHECK)
           if [ "${#missing[@]}" -ne 0 ]; then
             echo "::error::Release validation inputs unavailable: ${missing[*]}"
             printf 'Missing secrets: `%s`. Validation did not run.\n' "${missing[*]}" >> "$GITHUB_STEP_SUMMARY"
@@ -139,7 +156,8 @@ jobs:
           mkdir -p "$loader_dir"
           printf '%s\n' "$LOADER_RHOAI_3_4" > "$loader_dir/rhoai-3.4"
           printf '%s\n' "$LOADER_RHOAI_3_5" > "$loader_dir/rhoai-3.5"
-          chmod 700 "$loader_dir/rhoai-3.4" "$loader_dir/rhoai-3.5"
+          printf '%s\n' "$LOADER_RHOAI_3_6" > "$loader_dir/rhoai-3.6"
+          chmod 700 "$loader_dir/rhoai-3.4" "$loader_dir/rhoai-3.5" "$loader_dir/rhoai-3.6"
 
           make docker-build \
             CONTAINER_RUNTIME=docker \

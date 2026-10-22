@@ -7,3 +7,4 @@
 # release gate still validates and cross-checks the packaged benchmark payload.
 rhoai-3.4
 rhoai-3.5
+rhoai-3.6
