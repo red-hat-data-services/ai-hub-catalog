@@ -3,7 +3,7 @@ ARG BUILDER_IMAGE=registry.access.redhat.com/ubi9/go-toolset@sha256:8648cd4d48e0
 # The candidate base is immutable so rebuilding cannot silently change its
 # operating-system contents. This digest is reused from the current downstream
 # benchmark image; productization must approve it for the unified component.
-ARG BASE_IMAGE=registry.redhat.io/ubi9/ubi-minimal-pqc@sha256:8a842ac769de709143e4edeace516f2008dfdc431b64670ad3353fa323b44736
+ARG BASE_IMAGE=registry.redhat.io/ubi9/ubi-minimal-pqc@sha256:b3a0b012de0c578082e1bc5b01c8bc27461b4eeb571a0b1a2b21a07dbd845a62
 # Ordinary image builds fetch and test-qualify benchmarks against the catalog.
 # Release qualification and supported-version loader checks are opt-in.
 # Required catalog content and serving-runtime schema checks always run.
