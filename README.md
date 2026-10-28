@@ -216,8 +216,8 @@ make docker-build \
 ```
 
 This path runs the upstream release qualifier, verifies its report and filtered
-payload against the catalog, and executes the RHOAI 3.4/3.5 loader checks.
-Loader executables are passed as build secrets, and their dependencies must be
+payload against the catalog, and executes the RHOAI 3.6 loader check.
+The loader executable is passed as a build secret, and its dependencies must be
 present in the builder image.
 Make automatically uses `--no-cache` for validated builds so changed loader
 scripts always run. Direct Docker/Podman builds must also pass `--no-cache`

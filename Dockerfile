@@ -38,8 +38,6 @@ ARG VALIDATE_RELEASE
 # With VALIDATE_RELEASE=true, callers must use --no-cache (Make does this).
 # Changes to secret-mounted loader scripts do not invalidate the RUN cache.
 RUN --mount=type=secret,id=github_token \
-    --mount=type=secret,id=rhoai-3.4 \
-    --mount=type=secret,id=rhoai-3.5 \
     --mount=type=secret,id=rhoai-3.6 \
     --mount=type=secret,id=models-perf-benchmark-data-clone/token \
     sh scripts/prepare-image.sh /prepared

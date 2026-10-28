@@ -2,9 +2,6 @@
 # to the release command must contain one executable with each exact name and
 # no additional entries.
 #
-# RHOAI 2.25 is not in this dual-payload loader matrix: its Model Catalog can
-# consume the catalog payload, but it has no benchmark-loading option. The
-# release gate still validates and cross-checks the packaged benchmark payload.
-rhoai-3.4
-rhoai-3.5
+# The unified catalog image ships only for RHOAI 3.6 and later; earlier
+# releases do not consume it and are not part of this loader matrix.
 rhoai-3.6
