@@ -1,0 +1,24 @@
+# Owned by ai-hub-catalog. A sync keeps our version and lists upstream changes
+# to these paths for review. Literal file or directory paths, one per line.
+
+# Konflux builds of the ai-hub-catalog component. Upstream PipelineRuns
+# (.tekton/odh-*) build another component and must never land here.
+.tekton/
+
+# Unified catalog and benchmark image, and its release validation.
+Dockerfile
+Dockerfile.fixture
+Dockerfile.konflux
+.github/workflows/build-and-push-static-model-catalog-data.yml
+.github/workflows/post-codefreeze-gatekeeper.yaml
+release/
+cmd/release-candidate/
+internal/releasecandidate/
+scripts/check-runtime-catalogs.sh
+scripts/prepare-image.sh
+scripts/test-prepare-image.sh
+
+# This sync tooling.
+scripts/sync-mmc/
+.agents/skills/sync-mmc/
+.claude/skills

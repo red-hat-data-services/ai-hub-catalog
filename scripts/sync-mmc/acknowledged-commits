@@ -1,0 +1,4 @@
+# Upstream release-branch commits that `scripts/sync-mmc/sync-mmc.sh detect` should no
+# longer report, one per line: <full commit SHA> <reason>. Record a commit here
+# only after its fix is on main under another commit, or is deliberately not
+# needed here.

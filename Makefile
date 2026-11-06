@@ -234,7 +234,7 @@ run-with-report: run report
 dev: fmt vet test build
 
 # Full CI pipeline
-ci: deps check check-serving-runtimes test test-image-preparation test-release-candidate-output-path-guards validate-release-candidate-fixture build
+ci: deps check check-serving-runtimes test test-image-preparation test-sync-benchmark test-release-candidate-output-path-guards validate-release-candidate-fixture build
 
 # Create release build
 release: clean
@@ -403,7 +403,24 @@ docker-build-fixture: validate-release-candidate-fixture
 		-f Dockerfile.fixture \
 		--build-arg RELEASE_CANDIDATE_DIR="$(FIXTURE_RELEASE_CANDIDATE_DIR)" \
 		-t $(DOCKER_FULL_IMAGE_NAME)-fixture .
-	
+
+# Manual sync with model-metadata-collection; see scripts/sync-mmc/README.md.
+.PHONY: sync-mmc sync-mmc-check sync-benchmark test-sync-benchmark
+sync-mmc:
+	sh scripts/sync-mmc/sync-mmc.sh merge
+
+sync-mmc-check:
+	sh scripts/sync-mmc/sync-mmc.sh check
+
+# Pin models-perf-benchmark-data to REF, a branch name or a full commit SHA.
+# REF defaults to stable.
+sync-benchmark: override export REF := $(value REF)
+sync-benchmark:
+	sh scripts/sync-mmc/sync-mmc.sh benchmark "$$REF"
+
+test-sync-benchmark:
+	sh scripts/sync-mmc/test-sync-benchmark.sh
+
 # Show help
 help:
 	@echo "Available targets:"
@@ -442,4 +459,7 @@ help:
 	@echo "  validate-release-candidate-fixture - Validate the committed non-product CI fixture"
 	@echo "  docker-build - Qualify benchmarks and build the unified data image"
 	@echo "  docker-build-fixture - Build a local image-layout proof with fixture data"
+	@echo "  sync-mmc     - Merge model-metadata-collection main into the current sync branch"
+	@echo "  sync-mmc-check - Verify a sync merge before committing it"
+	@echo "  sync-benchmark - Pin models-perf-benchmark-data to REF (branch or full SHA, default stable)"
 	@echo "  help         - Show this help"

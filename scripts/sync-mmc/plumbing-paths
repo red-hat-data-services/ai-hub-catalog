@@ -1,0 +1,6 @@
+# Build and CI files of the upstream component. Release-branch commits that
+# touch only these paths are not content and are not reported. An entry ending
+# in / matches everything below it.
+.tekton/
+.github/
+Dockerfile.konflux

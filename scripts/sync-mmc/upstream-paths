@@ -1,0 +1,5 @@
+# Owned by model-metadata-collection. A sync takes upstream's version whole and
+# never line-merges these. Fix content upstream: a downstream edit here is
+# replaced by the next sync. Literal file or directory paths, one per line.
+data/
+input/
