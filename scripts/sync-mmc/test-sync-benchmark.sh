@@ -99,4 +99,20 @@ printf 'ARG BENCHMARK_REVISION=%s\nARG BENCHMARK_REVISION=%s\n' "$old" "$old" > 
 if run_sync main; then fail "duplicate pin line: expected failure"; fi
 grep -q 'exactly one' "$scratch/err" || fail "duplicate pin line: unexpected error"
 
+# The mmc merge refuses to run on main or on a release branch, before it
+# fetches anything. Nothing here touches the network.
+git_as_test commit --quiet --allow-empty -m "base"
+expect_guard() {
+    git checkout --quiet -B "$1"
+    if sh "$script" merge > "$scratch/out" 2> "$scratch/err"; then fail "merge on $1: expected failure"; fi
+    grep -q 'run on a sync branch' "$scratch/err" || fail "merge on $1: unexpected error: $(cat "$scratch/err")"
+}
+expect_guard main
+expect_guard release
+# Git cannot hold a branch named release next to release/trailing.
+git checkout --quiet main
+git branch --quiet -D release
+expect_guard release/trailing
+expect_guard release/stable
+
 echo "test-sync-benchmark: ok"

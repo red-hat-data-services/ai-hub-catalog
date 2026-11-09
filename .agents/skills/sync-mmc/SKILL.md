@@ -14,7 +14,7 @@ script's steps; run it.
 
 - Never commit, push, or open a PR. The skill ends with the merge resolved and
   staged; committing and publishing it is left to the user.
-- Never sync into `release`.
+- Never sync into `release/trailing` (or any `release` or `release/*` branch).
 - Never hand-edit paths in `scripts/sync-mmc/upstream-paths`. If upstream content is wrong,
   report it as an upstream fix.
 - Never add `.tekton/odh-*` files. They build another Konflux component.

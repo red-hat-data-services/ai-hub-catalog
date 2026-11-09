@@ -6,7 +6,7 @@ This repository is a downstream of
 [`opendatahub-io/model-metadata-collection`](https://github.com/opendatahub-io/model-metadata-collection)
 plus Red Hat fixes. It packages the catalogs for the RHOAI versions listed in
 [`release/supported-model-catalog-versions.txt`](../../release/supported-model-catalog-versions.txt),
-and ships off-cycle releases from the `release` branch.
+and ships off-cycle releases from the `release/trailing` branch.
 
 Syncs are run by people, using `make sync-mmc`. The
 [`sync-mmc` agent skill](../../.agents/skills/sync-mmc/SKILL.md) runs the same
@@ -25,8 +25,9 @@ procedure in Claude Code or Codex.
   complete set of downstream-only files; keep the list current.
 - **Everything else is merged normally.** Conflicts in shared files, such as
   `Makefile`, `go.mod`, and shared Go code, are resolved by hand.
-- **Sync into `main` only.** `release` advances to validated `main` commits; fixes
-  land on `main` first and are cherry-picked to `release`.
+- **Sync into `main` only.** `release/trailing` advances to validated `main` commits;
+  fixes land on `main` first and are cherry-picked to `release/trailing`. The script
+  refuses to run on `main` or on any `release` or `release/*` branch.
 - **Merge sync PRs with a merge commit.** Squash or rebase loses the merge base,
   and the next sync will conflict on every change again.
 

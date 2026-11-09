@@ -222,7 +222,7 @@ merge() {
     git diff --quiet && git diff --cached --quiet || die "commit or stash tracked changes first"
     current=$(git symbolic-ref --short -q HEAD) || die "check out a branch first"
     case "$current" in
-        main | release) die "run on a sync branch: git switch -c sync/mmc-$(date +%Y-%m-%d) origin/main" ;;
+        main | release | release/*) die "run on a sync branch: git switch -c sync/mmc-$(date +%Y-%m-%d) origin/main" ;;
     esac
 
     section "Fetching $UPSTREAM_REPOSITORY"
