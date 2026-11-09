@@ -30,7 +30,8 @@ BENCHMARK_DATA_REPOSITORY=$source_repo
 export BENCHMARK_DATA_REPOSITORY
 # The script may only run Git; credentials must not be needed for local paths.
 GITHUB_TOKEN=
-export GITHUB_TOKEN
+GITHUB_TOKEN_FILE=
+export GITHUB_TOKEN GITHUB_TOKEN_FILE
 
 # A downstream repository whose Dockerfile carries the pin.
 repo=$scratch/repo
