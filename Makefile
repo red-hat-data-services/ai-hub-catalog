@@ -31,6 +31,7 @@ FIXTURE_BENCHMARK_DATA_DIR=internal/releasecandidate/testdata/benchmarks
 FIXTURE_BENCHMARK_QUALIFICATION_REPORT=internal/releasecandidate/testdata/benchmark-qualification-report.json
 FIXTURE_LOADER_CHECK_DIR=internal/releasecandidate/testdata/loader-checks
 FIXTURE_SUPPORTED_VERSIONS=internal/releasecandidate/testdata/supported-model-catalog-versions.txt
+TEST_LOG?=$(BUILD_DIR)/test.log
 
 # Default data paths
 VALIDATED_MODELS_INDEX_PATH=data/validated-models-index.yaml
@@ -97,8 +98,21 @@ clean:
 
 # Run tests
 test:
-	@echo "Running tests..."
-	$(GOTEST) -v ./...
+	@mkdir -p "$$(dirname "$(TEST_LOG)")"
+	@echo "Running tests (full output: $(TEST_LOG))..."
+	@if $(GOTEST) ./... >"$(TEST_LOG)" 2>&1; then \
+		cat "$(TEST_LOG)"; \
+		echo "All tests passed."; \
+	else \
+		if [ -n "$$CI" ]; then \
+			echo "Full test output:"; \
+			cat "$(TEST_LOG)"; \
+		fi; \
+		echo "Test failures:"; \
+		awk '/^[[:space:]]*--- FAIL:/ || /^[[:space:]]*[^[:space:]]+_test\.go:[0-9]+:/ || /^# / || /^panic:/ || /^fatal error:/ || /^FAIL[[:space:]]/ || /^[^[:space:]]+\.go:[0-9]+:[0-9]+:/ { print; found = 1 } END { if (!found) exit 1 }' "$(TEST_LOG)" || tail -n 40 "$(TEST_LOG)"; \
+		echo "Full test output: $(TEST_LOG)"; \
+		exit 1; \
+	fi
 
 # Run tests with coverage
 test-coverage:
@@ -447,7 +461,7 @@ sync-mmc-check:
 
 # Pin models-perf-benchmark-data to REF, a branch name or a full commit SHA.
 # REF defaults to stable.
-sync-benchmark: override export REF := $(value REF)
+sync-benchmark: export REF := $(value REF)
 sync-benchmark:
 	sh scripts/sync-mmc/sync-mmc.sh benchmark "$$REF"
 
