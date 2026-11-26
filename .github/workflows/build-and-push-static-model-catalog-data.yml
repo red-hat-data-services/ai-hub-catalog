@@ -99,7 +99,6 @@ jobs:
       - name: Verify payload as an arbitrary non-root user
         run: |
           docker run --rm --user 1001230000 --entrypoint /bin/sh unified-model-catalog-data:fixture -c '
-            test -r /app/data/models-catalog.yaml &&
             test -r /app/data/validated-models-catalog.yaml &&
             test -s /app/data/redhat-serving-runtimes-catalog.yaml &&
             test -r /app/data/redhat-serving-runtimes-catalog.yaml &&

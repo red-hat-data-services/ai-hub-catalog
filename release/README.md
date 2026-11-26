@@ -61,9 +61,9 @@ can override it with
 (a Make variable or `--build-arg` for Docker/Podman).
 
 The normal build applies the producer's `approved-for-testing` exclusion
-policy. With the current benchmark pin and catalog, the source has 131 models;
-qualification includes 103 and excludes the 28 unmatched models. Qualification
-rejects new mismatches and stale exclusions, and any failure stops the build.
+policy. With the current pin and catalog, qualification includes 144 of the
+171 source models and excludes 27 unmatched models. Qualification rejects new
+mismatches and stale exclusions, and any failure stops the build.
 The test-qualified handoff is marked `promotion_eligible: false`.
 
 Consumer release validation and RHOAI loader scripts remain opt-in. The build

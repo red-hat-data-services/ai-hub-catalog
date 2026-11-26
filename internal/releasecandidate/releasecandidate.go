@@ -792,7 +792,7 @@ func validateIndexes(cfg Config, catalogs map[string]map[string]string, modelCat
 				pairedModelCatalogs[catalogName] = path
 			}
 			pairSupplemental := map[string]string{}
-			if catalogName == "models-catalog.yaml" {
+			if catalogName == supplementalModelCatalogName {
 				pairSupplemental = supplementalArtifacts
 			}
 			validateModelIndexPair(path, filepath.Join(catalogDir, catalogName), doc.Models, catalogArtifacts, pairSupplemental, indexedArtifacts, &problems)
@@ -812,9 +812,9 @@ func validateIndexes(cfg Config, catalogs map[string]map[string]string, modelCat
 			problems.add("generated model catalog %s has no corresponding producer index %s", filepath.Join(catalogDir, catalogName), filepath.Join(catalogDir, indexName))
 		}
 	}
-	if _, exists := modelCatalogArtifacts["models-catalog.yaml"]; !exists {
+	if _, exists := modelCatalogArtifacts[supplementalModelCatalogName]; !exists {
 		for uri := range supplementalArtifacts {
-			problems.add("supplemental catalog artifact %q is missing from generated model catalog %s", uri, filepath.Join(catalogDir, "models-catalog.yaml"))
+			problems.add("supplemental catalog artifact %q is missing from generated model catalog %s", uri, filepath.Join(catalogDir, supplementalModelCatalogName))
 		}
 	}
 	for _, kind := range []string{"mcp_servers", "serving_runtimes"} {
@@ -831,6 +831,11 @@ func validateIndexes(cfg Config, catalogs map[string]map[string]string, modelCat
 	}
 	return problems.err()
 }
+
+// supplementalModelCatalogName is the model catalog that publishes the models of
+// input/supplemental-catalog.yaml. Upstream includes them in Other and excludes
+// them from Validated.
+const supplementalModelCatalogName = "other-models-catalog.yaml"
 
 func readSupplementalModelArtifacts(cfg Config) (map[string]string, error) {
 	artifacts := map[string]string{}

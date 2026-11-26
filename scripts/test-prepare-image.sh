@@ -64,8 +64,7 @@ BENCHMARK_DATA_REPOSITORY=$scratch/source
 export BENCHMARK_REVISION BENCHMARK_DATA_REPOSITORY
 unset VALIDATE_RELEASE
 
-printf 'models: []\n' > "$scratch/context/data/models-catalog.yaml"
-printf 'producer-only index\n' > "$scratch/context/data/models-index.yaml"
+printf 'producer-only index\n' > "$scratch/context/data/validated-models-index.yaml"
 cp "$script_dir/../release/runtime-catalog-files.txt" "$scratch/context/release/runtime-catalog-files.txt"
 while IFS= read -r file; do
     case "$file" in ''|\#*) continue ;; esac
@@ -91,10 +90,10 @@ import sys
 with open(sys.argv[1]) as manifest:
     assert set(json.load(manifest)["files"]) == {"example/model/metadata.json"}
 MANIFEST
-cmp data/models-catalog.yaml "$scratch/default/app/data/models-catalog.yaml"
+cmp data/validated-models-catalog.yaml "$scratch/default/app/data/validated-models-catalog.yaml"
 cmp data/redhat-serving-runtimes-catalog.yaml "$scratch/default/app/data/redhat-serving-runtimes-catalog.yaml"
 test ! -e "$scratch/default/app/data/redhat-serving-runtimes-index.yaml"
-test ! -e "$scratch/default/app/data/models-index.yaml"
+test ! -e "$scratch/default/app/data/validated-models-index.yaml"
 test ! -e "$scratch/default/app/benchmarks/.git"
 test ! -e "$scratch/default/app/benchmarks/qualification-report.json"
 test ! -e "$scratch/default/qualification-report.json"
@@ -135,14 +134,14 @@ for validate in false true; do
     test ! -e "$scratch/missing-catalog"
 done
 
-printf 'changed catalog\n' >> data/models-catalog.yaml
+printf 'changed catalog\n' >> data/validated-models-catalog.yaml
 if sh "$script_dir/prepare-image.sh" "$scratch/changed-catalog" > "$scratch/error" 2>&1; then
     echo 'qualification unexpectedly accepted changed catalog bytes' >&2
     exit 1
 fi
-grep -F 'Catalog file models-catalog.yaml differs from CATALOG_REVISION' "$scratch/error"
+grep -F 'Catalog file validated-models-catalog.yaml differs from CATALOG_REVISION' "$scratch/error"
 test ! -e "$scratch/changed-catalog"
-git show HEAD:data/models-catalog.yaml > data/models-catalog.yaml
+git show HEAD:data/validated-models-catalog.yaml > data/validated-models-catalog.yaml
 
 # Release validation must select release qualification, without falling back
 # to the testing policy or the raw source when its approval check fails.

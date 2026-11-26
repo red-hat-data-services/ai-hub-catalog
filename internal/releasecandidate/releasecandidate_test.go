@@ -352,13 +352,14 @@ func TestValidateAndStageRejectsSupplementalArtifactMissingFromOutput(t *testing
 func TestValidateAndStageRejectsSupplementalModelIdentityDrift(t *testing.T) {
 	cfg := newTestCandidate(t, "example/model")
 	addSupplementalModelPair(t, cfg, true)
-	path := filepath.Join(cfg.CatalogDir, "models-catalog.yaml")
+	path := filepath.Join(cfg.CatalogDir, "other-models-catalog.yaml")
 	data, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)
 	}
 	data = []byte(strings.Replace(string(data), "name: example/supplemental", "name: example/stale", 1))
 	writeFile(t, path, string(data), 0o644)
+	refreshQualificationReport(t, cfg)
 
 	_, err = ValidateAndStage(cfg)
 	if err == nil || !strings.Contains(err.Error(), `belongs to model "example/supplemental"`) || !strings.Contains(err.Error(), `assigns it to "example/stale"`) {
@@ -653,21 +654,16 @@ printf 'MODEL_CATALOG_LOADER_CHECK_OK=%s\n' "$MODEL_CATALOG_VERSION"
 	return cfg
 }
 
+// addSupplementalModelPair adds the supplemental catalog. Upstream publishes its
+// models in the Other catalog, so they are added to the Other pair that
+// newTestCandidate already wrote.
 func addSupplementalModelPair(t *testing.T, cfg Config, includeSupplementalOutput bool) {
 	t.Helper()
-	runtimeFiles, err := os.ReadFile(cfg.RuntimeFileList)
-	if err != nil {
-		t.Fatal(err)
-	}
-	writeFile(t, cfg.RuntimeFileList, string(runtimeFiles)+"models-catalog.yaml\n", 0o644)
-	writeFile(t, filepath.Join(cfg.CatalogDir, "models-index.yaml"), `models:
-  - uri: example.invalid/indexed:1
-`, 0o644)
 	catalog := `source: test
 models:
-  - name: example/indexed
+  - name: example/other
     artifacts:
-      - uri: oci://example.invalid/indexed:1
+      - uri: oci://example.invalid/other:1
 `
 	if includeSupplementalOutput {
 		catalog += `  - name: example/supplemental
@@ -675,13 +671,14 @@ models:
       - uri: oci://example.invalid/supplemental:1
 `
 	}
-	writeFile(t, filepath.Join(cfg.CatalogDir, "models-catalog.yaml"), catalog, 0o644)
+	writeFile(t, filepath.Join(cfg.CatalogDir, "other-models-catalog.yaml"), catalog, 0o644)
 	writeFile(t, filepath.Join(cfg.ProducerInputDir, "supplemental-catalog.yaml"), `source: test
 models:
   - name: example/supplemental
     artifacts:
       - uri: oci://example.invalid/supplemental:1
 `, 0o644)
+	refreshQualificationReport(t, cfg)
 }
 
 func addMCPServerPair(t *testing.T, cfg Config, indexName, inputName string) {

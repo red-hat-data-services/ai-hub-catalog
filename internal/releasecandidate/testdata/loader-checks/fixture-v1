@@ -4,7 +4,6 @@ set -eu
 test "$MODEL_CATALOG_VERSION" = "fixture-v1"
 test -r "$CATALOG_DATA_DIR/validated-models-catalog.yaml"
 test -r "$CATALOG_DATA_DIR/other-models-catalog.yaml"
-test -r "$CATALOG_DATA_DIR/models-catalog.yaml"
 test -r "$BENCHMARK_DATA_DIR/manifest.json"
 test -d "$RELEASE_CANDIDATE_ROOT"
 
