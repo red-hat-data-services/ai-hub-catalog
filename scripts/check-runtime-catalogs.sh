@@ -4,7 +4,7 @@
 set -eu
 catalog_dir=${1:-data}
 runtime_files=${2:-release/runtime-catalog-files.txt}
-for required in models-catalog.yaml validated-models-catalog.yaml other-models-catalog.yaml \
+for required in validated-models-catalog.yaml other-models-catalog.yaml \
     redhat-mcp-servers-catalog.yaml partner-mcp-servers-catalog.yaml \
     community-mcp-servers-catalog.yaml redhat-agents-catalog.yaml \
     redhat-serving-runtimes-catalog.yaml; do
